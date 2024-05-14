@@ -479,7 +479,7 @@ def test_container_equality():
 
 
 def test_stable_container():
-    # Defines the common merkleization format and a portable serialization format across variants
+    # Defines the common merkleization format and a portable serialization format
     class Shape(StableContainer[4]):
         side: Optional[uint16]
         color: uint8
@@ -505,15 +505,17 @@ def test_stable_container():
                 return Square
             assert False
 
-    # Compounds
+    # Defines a container with immutable scheme that contains two `StableContainer`
     class ShapePair(Container):
         shape_1: Shape
         shape_2: Shape
 
+    # Inherits merkleization format from `ShapePair`, and serializes more compactly
     class SquarePair(MerkleizeAs[ShapePair]):
         shape_1: Square
         shape_2: Square
 
+    # Inherits merkleization format from `ShapePair`, and reorders fields
     class CirclePair(MerkleizeAs[ShapePair]):
         shape_2: Circle
         shape_1: Circle
