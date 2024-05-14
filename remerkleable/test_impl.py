@@ -841,93 +841,92 @@ def test_stable_container():
         ),
     ).hash_tree_root()
 
+    # basic container
+    class Shape1(StableContainer[4]):
+        side: Optional[uint16]
+        color: uint8
+        radius: Optional[uint16]
 
-# basic container
-class Shape1(StableContainer[4]):
-    side: Optional[uint16]
-    color: uint8
-    radius: Optional[uint16]
+    # basic container with different depth
+    class Shape2(StableContainer[8]):
+        side: Optional[uint16]
+        color: uint8
+        radius: Optional[uint16]
 
-# basic container with different depth
-class Shape2(StableContainer[8]):
-    side: Optional[uint16]
-    color: uint8
-    radius: Optional[uint16]
+    # basic container with variable fields
+    class Shape3(StableContainer[8]):
+        side: Optional[uint16]
+        colors: Optional[List[uint8, 4]]
+        radius: Optional[uint16]
 
-# basic container with variable fields
-class Shape3(StableContainer[8]):
-    side: Optional[uint16]
-    colors: Optional[List[uint8, 4]]
-    radius: Optional[uint16]
+    stable_container_tests = [
+        {
+            'value': Shape1(side=0x42, color=1, radius=0x42),
+            'serialized': '074200014200',
+            'hash_tree_root': '37b28eab19bc3e246e55d2e2b2027479454c27ee006d92d4847c84893a162e6d'
+        },
+        {
+            'value': Shape1(side=0x42, color=1, radius=None),
+            'serialized': '03420001',
+            'hash_tree_root': 'bfdb6fda9d02805e640c0f5767b8d1bb9ff4211498a5e2d7c0f36e1b88ce57ff'
+        },
+        {
+            'value': Shape1(side=None, color=1, radius=None),
+            'serialized': '0201',
+            'hash_tree_root': '522edd7309c0041b8eb6a218d756af558e9cf4c816441ec7e6eef42dfa47bb98'
+        },
+        {
+            'value': Shape1(side=None, color=1, radius=0x42),
+            'serialized': '06014200',
+            'hash_tree_root': 'f66d2c38c8d2afbd409e86c529dff728e9a4208215ca20ee44e49c3d11e145d8'
+        },
+        {
+            'value': Shape2(side=0x42, color=1, radius=0x42),
+            'serialized': '074200014200',
+            'hash_tree_root': '0792fb509377ee2ff3b953dd9a88eee11ac7566a8df41c6c67a85bc0b53efa4e'
+        },
+        {
+            'value': Shape2(side=0x42, color=1, radius=None),
+            'serialized': '03420001',
+            'hash_tree_root': 'ddc7acd38ae9d6d6788c14bd7635aeb1d7694768d7e00e1795bb6d328ec14f28'
+        },
+        {
+            'value': Shape2(side=None, color=1, radius=None),
+            'serialized': '0201',
+            'hash_tree_root': '9893ecf9b68030ff23c667a5f2e4a76538a8e2ab48fd060a524888a66fb938c9'
+        },
+        {
+            'value': Shape2(side=None, color=1, radius=0x42),
+            'serialized': '06014200',
+            'hash_tree_root': 'e823471310312d52aa1135d971a3ed72ba041ade3ec5b5077c17a39d73ab17c5'
+        },
+        {
+            'value': Shape3(side=0x42, colors=[1, 2], radius=0x42),
+            'serialized': '0742000800000042000102',
+            'hash_tree_root': '1093b0f1d88b1b2b458196fa860e0df7a7dc1837fe804b95d664279635cb302f'
+        },
+        {
+            'value': Shape3(side=0x42, colors=None, radius=None),
+            'serialized': '014200',
+            'hash_tree_root': '28df3f1c3eebd92504401b155c5cfe2f01c0604889e46ed3d22a3091dde1371f'
+        },
+        {
+            'value': Shape3(side=None, colors=[1, 2], radius=None),
+            'serialized': '02040000000102',
+            'hash_tree_root': '659638368467b2c052ca698fcb65902e9b42ce8e94e1f794dd5296ceac2dec3e'
+        },
+        {
+            'value': Shape3(side=None, colors=None, radius=0x42),
+            'serialized': '044200',
+            'hash_tree_root': 'd585dd0561c718bf4c29e4c1bd7d4efd4a5fe3c45942a7f778acb78fd0b2a4d2'
+        },
+        {
+            'value': Shape3(side=None, colors=[1, 2], radius=0x42),
+            'serialized': '060600000042000102',
+            'hash_tree_root': '00fc0cecc200a415a07372d5d5b8bc7ce49f52504ed3da0336f80a26d811c7bf'
+        }
+    ]
 
-stable_container_tests = [
-    {
-        'value': Shape1(side=0x42, color=1, radius=0x42),
-        'serialized': '074200014200',
-        'hash_tree_root': '37b28eab19bc3e246e55d2e2b2027479454c27ee006d92d4847c84893a162e6d'
-    },
-    {
-        'value': Shape1(side=0x42, color=1, radius=None),
-        'serialized': '03420001',
-        'hash_tree_root': 'bfdb6fda9d02805e640c0f5767b8d1bb9ff4211498a5e2d7c0f36e1b88ce57ff'
-    },
-    {
-        'value': Shape1(side=None, color=1, radius=None),
-        'serialized': '0201',
-        'hash_tree_root': '522edd7309c0041b8eb6a218d756af558e9cf4c816441ec7e6eef42dfa47bb98'
-    },
-    {
-        'value': Shape1(side=None, color=1, radius=0x42),
-        'serialized': '06014200',
-        'hash_tree_root': 'f66d2c38c8d2afbd409e86c529dff728e9a4208215ca20ee44e49c3d11e145d8'
-    },
-    {
-        'value': Shape2(side=0x42, color=1, radius=0x42),
-        'serialized': '074200014200',
-        'hash_tree_root': '0792fb509377ee2ff3b953dd9a88eee11ac7566a8df41c6c67a85bc0b53efa4e'
-    },
-    {
-        'value': Shape2(side=0x42, color=1, radius=None),
-        'serialized': '03420001',
-        'hash_tree_root': 'ddc7acd38ae9d6d6788c14bd7635aeb1d7694768d7e00e1795bb6d328ec14f28'
-    },
-    {
-        'value': Shape2(side=None, color=1, radius=None),
-        'serialized': '0201',
-        'hash_tree_root': '9893ecf9b68030ff23c667a5f2e4a76538a8e2ab48fd060a524888a66fb938c9'
-    },
-    {
-        'value': Shape2(side=None, color=1, radius=0x42),
-        'serialized': '06014200',
-        'hash_tree_root': 'e823471310312d52aa1135d971a3ed72ba041ade3ec5b5077c17a39d73ab17c5'
-    },
-    {
-        'value': Shape3(side=0x42, colors=[1, 2], radius=0x42),
-        'serialized': '0742000800000042000102',
-        'hash_tree_root': '1093b0f1d88b1b2b458196fa860e0df7a7dc1837fe804b95d664279635cb302f'
-    },
-    {
-        'value': Shape3(side=0x42, colors=None, radius=None),
-        'serialized': '014200',
-        'hash_tree_root': '28df3f1c3eebd92504401b155c5cfe2f01c0604889e46ed3d22a3091dde1371f'
-    },
-    {
-        'value': Shape3(side=None, colors=[1, 2], radius=None),
-        'serialized': '02040000000102',
-        'hash_tree_root': '659638368467b2c052ca698fcb65902e9b42ce8e94e1f794dd5296ceac2dec3e'
-    },
-    {
-        'value': Shape3(side=None, colors=None, radius=0x42),
-        'serialized': '044200',
-        'hash_tree_root': 'd585dd0561c718bf4c29e4c1bd7d4efd4a5fe3c45942a7f778acb78fd0b2a4d2'
-    },
-    {
-        'value': Shape3(side=None, colors=[1, 2], radius=0x42),
-        'serialized': '060600000042000102',
-        'hash_tree_root': '00fc0cecc200a415a07372d5d5b8bc7ce49f52504ed3da0336f80a26d811c7bf'
-    }
-]
-
-for test in stable_container_tests:
-    assert test['value'].encode_bytes().hex() == test['serialized']
-    assert test['value'].hash_tree_root().hex() == test['hash_tree_root']
+    for test in stable_container_tests:
+        assert test['value'].encode_bytes().hex() == test['serialized']
+        assert test['value'].hash_tree_root().hex() == test['hash_tree_root']
