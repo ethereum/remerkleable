@@ -13,6 +13,7 @@ from remerkleable.tree import NavigationError, Node, PairNode, \
     get_depth, subtree_fill_to_contents, zero_node
 
 N = TypeVar('N')
+B = TypeVar('B', bound="ComplexView")
 S = TypeVar('S', bound="ComplexView")
 
 
@@ -261,7 +262,7 @@ class StableContainer(ComplexView):
         return num_prefix_bytes + num_data_bytes
 
 
-class Variant(ComplexView):
+class MerkleizeAs(ComplexView):
     _o: int
 
     def __new__(cls, backing: Optional[Node] = None, hook: Optional[ViewHook] = None, **kwargs):
@@ -281,7 +282,7 @@ class Variant(ComplexView):
         if len(extra_kwargs) > 0:
             raise AttributeError(f'The field names [{"".join(extra_kwargs.keys())}] are not defined in {cls}')
 
-        value = cls.S(backing, hook, **kwargs)
+        value = cls.B(backing, hook, **kwargs)
         return cls(backing=value.get_backing())
 
     def __init_subclass__(cls, *args, **kwargs):
@@ -290,16 +291,17 @@ class Variant(ComplexView):
         for _, (_, fopt) in cls.fields().items():
             if fopt:
                 cls._o += 1
+        assert cls._o == 0 or issubclass(cls.B, StableContainer)
 
-    def __class_getitem__(cls, s) -> Type["Variant"]:
-        if not issubclass(s, StableContainer):
-            raise Exception(f"invalid variant container: {s}")
+    def __class_getitem__(cls, b) -> Type["MerkleizeAs"]:
+        if not issubclass(b, StableContainer) and not issubclass(b, Container):
+            raise Exception(f"invalid MerkleizeAs base: {b}")
 
-        class VariantView(Variant, s):
-            S = s
+        class MerkleizeAsView(MerkleizeAs, b):
+            B = b
 
-        VariantView.__name__ = VariantView.type_repr()
-        return VariantView
+        MerkleizeAsView.__name__ = MerkleizeAsView.type_repr()
+        return MerkleizeAsView
 
     @classmethod
     def fields(cls) -> Dict[str, Tuple[Type[View], bool]]:
@@ -319,7 +321,7 @@ class Variant(ComplexView):
         if cls.is_fixed_byte_length():
             return cls.min_byte_length()
         else:
-            raise Exception("dynamic length variant does not have a fixed byte length")
+            raise Exception("dynamic length MerkleizeAs does not have a fixed byte length")
 
     @classmethod
     def min_byte_length(cls) -> int:
@@ -342,17 +344,19 @@ class Variant(ComplexView):
         return total
 
     def active_fields(self) -> Bitvector:
+        assert issubclass(self.__class__.B, StableContainer)
         active_fields_node = super().get_backing().get_right()
-        return Bitvector[self.__class__.S.N].view_from_backing(active_fields_node)
+        return Bitvector[self.__class__.B.N].view_from_backing(active_fields_node)
 
     def optional_fields(self) -> Bitvector:
+        assert issubclass(self.__class__.B, StableContainer)
         assert self.__class__._o > 0
         active_fields = self.active_fields()
         optional_fields = Bitvector[self.__class__._o]()
         oindex = 0
         for fkey, (_, fopt) in self.__class__.fields().items():
             if fopt:
-                (findex, _, _) = self.__class__.S._field_indices[fkey]
+                (findex, _, _) = self.__class__.B._field_indices[fkey]
                 optional_fields.set(oindex, active_fields.get(findex))
                 oindex += 1
         return optional_fields
@@ -366,16 +370,19 @@ class Variant(ComplexView):
             except KeyError:
                 raise AttributeError(f"unknown attribute {item}")
             try:
-                (findex, _, _) = self.__class__.S._field_indices[item]
+                (findex, _, _) = self.__class__.B._field_indices[item]
             except KeyError:
                 raise AttributeError(f"unknown attribute {item} in base")
+
+            if not issubclass(self.__class__.B, StableContainer):
+                return super().get(findex)
 
             if not self.active_fields().get(findex):
                 assert fopt
                 return None
 
             data = super().get_backing().get_left()
-            fnode = data.getter(2**get_depth(self.__class__.S.N) + findex)
+            fnode = data.getter(2**get_depth(self.__class__.B.N) + findex)
             return ftyp.view_from_backing(fnode)
 
     def __setattr__(self, key, value):
@@ -387,9 +394,13 @@ class Variant(ComplexView):
             except KeyError:
                 raise AttributeError(f"unknown attribute {key}")
             try:
-                (findex, _, _) = self.__class__.S._field_indices[key]
+                (findex, _, _) = self.__class__.B._field_indices[key]
             except KeyError:
                 raise AttributeError(f"unknown attribute {key} in base")
+
+            if not issubclass(self.__class__.B, StableContainer):
+                super().set(findex, value)
+                return
 
             next_backing = self.get_backing()
 
@@ -406,7 +417,7 @@ class Variant(ComplexView):
             else:
                 fnode = zero_node(0)
             data = next_backing.get_left()
-            next_data = data.setter(2**get_depth(self.__class__.S.N) + findex)(fnode)
+            next_data = data.setter(2**get_depth(self.__class__.B.N) + findex)(fnode)
             next_backing = next_backing.rebind_left(next_data)
 
             self.set_backing(next_backing)
@@ -416,14 +427,14 @@ class Variant(ComplexView):
 
     @classmethod
     def type_repr(cls) -> str:
-        return f"Variant[{cls.S.__name__}]"
+        return f"MerkleizeAs[{cls.B.__name__}]"
 
     @classmethod
-    def deserialize(cls: Type[S], stream: BinaryIO, scope: int) -> S:
+    def deserialize(cls: Type[B], stream: BinaryIO, scope: int) -> B:
         if cls._o > 0:
             num_prefix_bytes = Bitvector[cls._o].type_byte_length()
             if scope < num_prefix_bytes:
-                raise ValueError("scope too small, cannot read Variant optional fields")
+                raise ValueError("scope too small, cannot read MerkleizeAs optional fields")
             optional_fields = Bitvector[cls._o].deserialize(stream, num_prefix_bytes)
             scope = scope - num_prefix_bytes
 
@@ -488,13 +499,22 @@ class Variant(ComplexView):
         assert oindex == self.__class__._o
 
         temp_dyn_stream = io.BytesIO()
-        data = super().get_backing().get_left()
-        active_fields = self.active_fields()
+        if issubclass(self.__class__.B, StableContainer):
+            data = super().get_backing().get_left()
+            active_fields = self.active_fields()
+            n = self.__class__.B.N
+        else:
+            data = super().get_backing()
+            n = len(self.__class__.B.fields())
         for fkey, (ftyp, _) in self.__class__.fields().items():
-            (findex, _, _) = self.__class__.S._field_indices[fkey]
-            if not active_fields.get(findex):
-                continue
-            fnode = data.getter(2**get_depth(self.__class__.N) + findex)
+            if issubclass(self.__class__.B, StableContainer):
+                (findex, _, _) = self.__class__.B._field_indices[fkey]
+                if not active_fields.get(findex):
+                    continue
+                fnode = data.getter(2**get_depth(n) + findex)
+            else:
+                findex = self.__class__.B._field_indices[fkey]
+                fnode = data.getter(2**get_depth(n) + findex)
             v = ftyp.view_from_backing(fnode)
             if ftyp.is_fixed_byte_length():
                 v.serialize(stream)
@@ -508,16 +528,16 @@ class Variant(ComplexView):
 
 
 class OneOf(ComplexView):
-    def __class_getitem__(cls, s) -> Type["OneOf"]:
-        if not issubclass(s, StableContainer) and not issubclass(s, Container):
-            raise Exception(f"invalid oneof container: {s}")
+    def __class_getitem__(cls, b) -> Type["OneOf"]:
+        if not issubclass(b, StableContainer) and not issubclass(b, Container):
+            raise Exception(f"invalid OneOf base: {b}")
 
-        class OneOfView(OneOf, s):
-            S = s
+        class OneOfView(OneOf, b):
+            B = b
 
             @classmethod
             def fields(cls):
-                return s.fields()
+                return b.fields()
 
         OneOfView.__name__ = OneOfView.type_repr()
         return OneOfView
@@ -527,19 +547,19 @@ class OneOf(ComplexView):
 
     @classmethod
     def type_repr(cls) -> str:
-        return f"OneOf[{cls.S}]"
+        return f"OneOf[{cls.B}]"
 
     @classmethod
-    def decode_bytes(cls: Type[S], bytez: bytes, *args, **kwargs) -> S:
+    def decode_bytes(cls: Type[B], bytez: bytes, *args, **kwargs) -> B:
         stream = io.BytesIO()
         stream.write(bytez)
         stream.seek(0)
         return cls.deserialize(stream, len(bytez), *args, **kwargs)
 
     @classmethod
-    def deserialize(cls: Type[S], stream: BinaryIO, scope: int, *args, **kwargs) -> S:
-        value = cls.S.deserialize(stream, scope)
-        v = cls.select_variant(value, *args, **kwargs)
-        if not issubclass(v.S, cls.S):
-            raise Exception(f"unsupported select_variant result: {v}")
+    def deserialize(cls: Type[B], stream: BinaryIO, scope: int, *args, **kwargs) -> B:
+        value = cls.B.deserialize(stream, scope)
+        v = cls.select_from_base(value, *args, **kwargs)
+        if not issubclass(v.B, cls.B):
+            raise Exception(f"unsupported select_from_base result: {v}")
         return v(backing=value.get_backing())

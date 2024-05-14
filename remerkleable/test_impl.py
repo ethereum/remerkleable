@@ -9,7 +9,7 @@ from remerkleable.basic import boolean, bit, byte, uint8, uint16, uint32, uint64
 from remerkleable.bitfields import Bitvector, Bitlist
 from remerkleable.byte_arrays import ByteVector, ByteList
 from remerkleable.core import View, ObjType
-from remerkleable.stable_container import OneOf, StableContainer, Variant
+from remerkleable.stable_container import OneOf, StableContainer, MerkleizeAs
 from remerkleable.union import Union
 from hashlib import sha256
 
@@ -486,24 +486,37 @@ def test_stable_container():
         radius: Optional[uint16]
 
     # Inherits merkleization format from `Shape`, but is serialized more compactly
-    class Square(Variant[Shape]):
+    class Square(MerkleizeAs[Shape]):
         side: uint16
         color: uint8
 
     # Inherits merkleization format from `Shape`, but is serialized more compactly
-    class Circle(Variant[Shape]):
+    class Circle(MerkleizeAs[Shape]):
         radius: uint16
         color: uint8
 
     class AnyShape(OneOf[Shape]):
         @classmethod
-        def select_variant(cls, value: Shape, circle_allowed = False) -> Type[Shape]:
+        def select_from_base(cls, value: Shape, circle_allowed = False) -> Type[Shape]:
             if value.radius is not None:
                 assert circle_allowed
                 return Circle
             if value.side is not None:
                 return Square
             assert False
+
+    # Compounds
+    class ShapePair(Container):
+        shape_1: Shape
+        shape_2: Shape
+
+    class SquarePair(MerkleizeAs[ShapePair]):
+        shape_1: Square
+        shape_2: Square
+
+    class CirclePair(MerkleizeAs[ShapePair]):
+        shape_2: Circle
+        shape_1: Circle
 
     # Helper containers for merkleization testing
     class ShapePayload(Container):
@@ -513,6 +526,22 @@ def test_stable_container():
     class ShapeRepr(Container):
         value: ShapePayload
         active_fields: Bitvector[4]
+
+    class ShapePairRepr(Container):
+        shape_1: ShapeRepr
+        shape_2: ShapeRepr
+
+    class AnyShapePair(OneOf[ShapePair]):
+        @classmethod
+        def select_from_base(cls, value: ShapePair, circle_allowed = False) -> Type[ShapePair]:
+            typ_1 = AnyShape.select_from_base(value.shape_1, circle_allowed)
+            typ_2 = AnyShape.select_from_base(value.shape_2, circle_allowed)
+            assert typ_1 == typ_2
+            if typ_1 is Circle:
+                return CirclePair
+            if typ_1 is Square:
+                return SquarePair
+            assert False
 
     # Square tests
     square_bytes_stable = bytes.fromhex("03420001")
@@ -640,6 +669,81 @@ def test_stable_container():
         assert False
     except:
         pass
+
+    # SquarePair tests
+    square_pair_bytes_stable = bytes.fromhex("080000000c0000000342000103690001")
+    square_pair_bytes_variant = bytes.fromhex("420001690001")
+    square_pair_root = ShapePairRepr(
+        shape_1=ShapeRepr(
+            value=ShapePayload(side=0x42, color=1, radius=0),
+            active_fields=Bitvector[4](True, True, False, False),
+        ),
+        shape_2=ShapeRepr(
+            value=ShapePayload(side=0x69, color=1, radius=0),
+            active_fields=Bitvector[4](True, True, False, False),
+        )
+    ).hash_tree_root()
+    shape_pairs = [ShapePair(
+        shape_1=Shape(side=0x42, color=1, radius=None),
+        shape_2=Shape(side=0x69, color=1, radius=None),
+    )]
+    square_pairs = [SquarePair(
+        shape_1=Square(side=0x42, color=1),
+        shape_2=Square(side=0x69, color=1),
+    )]
+    square_pairs.extend(list(SquarePair(backing=pair.get_backing()) for pair in shape_pairs))
+    shape_pairs.extend(list(ShapePair(backing=pair.get_backing()) for pair in shape_pairs))
+    shape_pairs.extend(list(ShapePair(backing=pair.get_backing()) for pair in square_pairs))
+    square_pairs.extend(list(SquarePair(backing=pair.get_backing()) for pair in square_pairs))
+    assert len(set(shape_pairs)) == 1
+    assert len(set(square_pairs)) == 1
+    assert all(pair.encode_bytes() == square_pair_bytes_stable for pair in shape_pairs)
+    assert all(pair.encode_bytes() == square_pair_bytes_variant for pair in square_pairs)
+    assert (
+        SquarePair(backing=ShapePair.decode_bytes(square_pair_bytes_stable).get_backing()) ==
+        SquarePair.decode_bytes(square_pair_bytes_variant) ==
+        AnyShapePair.decode_bytes(square_pair_bytes_stable) ==
+        AnyShapePair.decode_bytes(square_pair_bytes_stable, circle_allowed = True)
+    )
+    assert all(pair.hash_tree_root() == square_pair_root for pair in shape_pairs)
+    assert all(pair.hash_tree_root() == square_pair_root for pair in square_pairs)
+
+    # CirclePair tests
+    circle_pair_bytes_stable = bytes.fromhex("080000000c0000000601420006016900")
+    circle_pair_bytes_variant = bytes.fromhex("690001420001")
+    circle_pair_root = ShapePairRepr(
+        shape_1=ShapeRepr(
+            value=ShapePayload(side=0, color=1, radius=0x42),
+            active_fields=Bitvector[4](False, True, True, False),
+        ),
+        shape_2=ShapeRepr(
+            value=ShapePayload(side=0, color=1, radius=0x69),
+            active_fields=Bitvector[4](False, True, True, False),
+        )
+    ).hash_tree_root()
+    shape_pairs = [ShapePair(
+        shape_1=Shape(side=None, color=1, radius=0x42),
+        shape_2=Shape(side=None, color=1, radius=0x69),
+    )]
+    circle_pairs = [CirclePair(
+        shape_1=Circle(radius=0x42, color=1),
+        shape_2=Circle(radius=0x69, color=1),
+    )]
+    circle_pairs.extend(list(CirclePair(backing=pair.get_backing()) for pair in shape_pairs))
+    shape_pairs.extend(list(ShapePair(backing=pair.get_backing()) for pair in shape_pairs))
+    shape_pairs.extend(list(ShapePair(backing=pair.get_backing()) for pair in circle_pairs))
+    circle_pairs.extend(list(CirclePair(backing=pair.get_backing()) for pair in circle_pairs))
+    assert len(set(shape_pairs)) == 1
+    assert len(set(circle_pairs)) == 1
+    assert all(pair.encode_bytes() == circle_pair_bytes_stable for pair in shape_pairs)
+    assert all(pair.encode_bytes() == circle_pair_bytes_variant for pair in circle_pairs)
+    assert (
+        CirclePair(backing=ShapePair.decode_bytes(circle_pair_bytes_stable).get_backing()) ==
+        CirclePair.decode_bytes(circle_pair_bytes_variant) ==
+        AnyShapePair.decode_bytes(circle_pair_bytes_stable, circle_allowed = True)
+    )
+    assert all(pair.hash_tree_root() == circle_pair_root for pair in shape_pairs)
+    assert all(pair.hash_tree_root() == circle_pair_root for pair in circle_pairs)
 
     # Unsupported tests
     shape = Shape(side=None, color=1, radius=None)
