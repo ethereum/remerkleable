@@ -492,8 +492,8 @@ def test_stable_container():
 
     # Inherits merkleization format from `Shape`, but is serialized more compactly
     class Circle(Profile[Shape]):
-        radius: uint16
         color: uint8
+        radius: uint16
 
     class AnyShape(OneOf[Shape]):
         @classmethod
@@ -515,10 +515,10 @@ def test_stable_container():
         shape_1: Square
         shape_2: Square
 
-    # Inherits merkleization format from `ShapePair`, and reorders fields
+    # Inherits merkleization format from `ShapePair`, and serializes more compactly
     class CirclePair(Profile[ShapePair]):
-        shape_2: Circle
         shape_1: Circle
+        shape_2: Circle
 
     # Helper containers for merkleization testing
     class ShapePayload(Container):
@@ -624,7 +624,7 @@ def test_stable_container():
 
     # Circle tests
     circle_bytes_stable = bytes.fromhex("06014200")
-    circle_bytes_profile = bytes.fromhex("420001")
+    circle_bytes_profile = bytes.fromhex("014200")
     circle_root = ShapeRepr(
         value=ShapePayload(side=0, color=1, radius=0x42),
         active_fields=Bitvector[4](False, True, True, False),
@@ -712,7 +712,7 @@ def test_stable_container():
 
     # CirclePair tests
     circle_pair_bytes_stable = bytes.fromhex("080000000c0000000601420006016900")
-    circle_pair_bytes_profile = bytes.fromhex("690001420001")
+    circle_pair_bytes_profile = bytes.fromhex("014200016900")
     circle_pair_root = ShapePairRepr(
         shape_1=ShapeRepr(
             value=ShapePayload(side=0, color=1, radius=0x42),
@@ -823,7 +823,7 @@ def test_stable_container():
         square=Square(side=0x42, color=1),
         circle=Circle(radius=0x42, color=1),
     )
-    container_bytes = bytes.fromhex("0a000000420001420001074200014200")
+    container_bytes = bytes.fromhex("0a000000420001014200074200014200")
     assert container.encode_bytes() == container_bytes
     assert ShapeContainer.decode_bytes(container_bytes) == container
     assert container.hash_tree_root() == ShapeContainerRepr(
