@@ -2,6 +2,7 @@
 
 import pytest  # type: ignore
 
+from typing import Optional
 from random import Random
 
 from remerkleable.complex import Container, Vector, List
@@ -10,6 +11,7 @@ from remerkleable.basic import boolean, bit, uint, byte, uint8, uint16, uint32, 
 from remerkleable.bitfields import Bitvector, Bitlist
 from remerkleable.byte_arrays import ByteVector, Bytes1, Bytes4, Bytes8, Bytes32, Bytes48, Bytes96
 from remerkleable.core import BasicView, View
+from remerkleable.stable_container import Profile, StableContainer
 from remerkleable.union import Union
 from remerkleable.tree import get_depth, merkle_hash, LEFT_GINDEX, RIGHT_GINDEX
 
@@ -358,6 +360,59 @@ def test_paths():
     assert (Bitlist[123] / "__len__").navigate_type() == uint256
     try:
         (Bitlist[123] / 123).navigate_type()
+        assert False
+    except KeyError:
+        pass
+
+    class StableFields(StableContainer[8]):
+        foo: Optional[uint32]
+        bar: Optional[uint64]
+        quix: Optional[uint64]
+        more: Optional[uint32]
+
+    class FooFields(Profile[StableFields]):
+        foo: uint32
+        more: Optional[uint32]
+
+    class BarFields(Profile[StableFields]):
+        bar: uint64
+        quix: uint64
+        more: Optional[uint32]
+
+    assert issubclass((StableFields / '__active_fields__').navigate_type(), Bitvector)
+    assert (StableFields / '__active_fields__').navigate_type().vector_length() == 8
+    assert (StableFields / '__active_fields__').gindex() == 0b11
+    assert (StableFields / 'foo').navigate_type() == Optional[uint32]
+    assert (StableFields / 'foo').gindex() == 0b10000
+    assert (StableFields / 'bar').navigate_type() == Optional[uint64]
+    assert (StableFields / 'bar').gindex() == 0b10001
+    assert (StableFields / 'quix').navigate_type() == Optional[uint64]
+    assert (StableFields / 'quix').gindex() == 0b10010
+    assert (StableFields / 'more').navigate_type() == Optional[uint32]
+    assert (StableFields / 'more').gindex() == 0b10011
+
+    assert issubclass((FooFields / '__active_fields__').navigate_type(), Bitvector)
+    assert (FooFields / '__active_fields__').navigate_type().vector_length() == 8
+    assert (FooFields / '__active_fields__').gindex() == 0b11
+    assert (FooFields / 'foo').navigate_type() == uint32
+    assert (FooFields / 'foo').gindex() == 0b10000
+    assert (FooFields / 'more').navigate_type() == Optional[uint32]
+    assert (FooFields / 'more').gindex() == 0b10011
+    try:
+        (FooFields / 'bar').navigate_type()
+        assert False
+    except KeyError:
+        pass
+
+    assert issubclass((BarFields / '__active_fields__').navigate_type(), Bitvector)
+    assert (BarFields / '__active_fields__').navigate_type().vector_length() == 8
+    assert (BarFields / '__active_fields__').gindex() == 0b11
+    assert (BarFields / 'bar').navigate_type() == uint64
+    assert (BarFields / 'bar').gindex() == 0b10001
+    assert (BarFields / 'more').navigate_type() == Optional[uint32]
+    assert (BarFields / 'more').gindex() == 0b10011
+    try:
+        (BarFields / 'foo').navigate_type()
         assert False
     except KeyError:
         pass
