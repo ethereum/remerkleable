@@ -319,7 +319,7 @@ class Profile(ComplexView):
         if not issubclass(b, StableContainer) and not issubclass(b, Container):
             raise Exception(f"invalid Profile base: {b}")
 
-        class ProfileView(Profile, b):
+        class ProfileView(Profile):
             B = b
 
         ProfileView.__name__ = ProfileView.type_repr()
@@ -567,8 +567,13 @@ class Profile(ComplexView):
         if key == '__active_fields__':
             return RIGHT_GINDEX
         (_, _) = cls.fields()[key]
-        (findex, _, _) = cls.B._field_indices[key]
-        return 2**get_depth(cls.N) * 2 + findex
+        if issubclass(cls.B, StableContainer):
+            (findex, _, _) = cls.B._field_indices[key]
+            return 2**get_depth(cls.B.N) * 2 + findex
+        else:
+            findex = cls.B._field_indices[key]
+            n = len(cls.B.fields())
+            return 2**get_depth(n) + findex
 
 
 class OneOf(ComplexView):
