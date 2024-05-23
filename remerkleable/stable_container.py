@@ -137,6 +137,11 @@ class StableContainer(ComplexView):
         active_fields_node = super().get_backing().get_right()
         return Bitvector[self.__class__.N].view_from_backing(active_fields_node)
 
+    def __getattribute__(self, item):
+        if item == 'N':
+            raise AttributeError(f"use .__class__.{item} to access {item}")
+        return object.__getattribute__(self, item)
+
     def __getattr__(self, item):
         if item[0] == '_':
             return super().__getattribute__(item)
@@ -377,6 +382,11 @@ class Profile(ComplexView):
                 optional_fields.set(oindex, active_fields.get(findex))
                 oindex += 1
         return optional_fields
+
+    def __getattribute__(self, item):
+        if item == 'B':
+            raise AttributeError(f"use .__class__.{item} to access {item}")
+        return object.__getattribute__(self, item)
 
     def __getattr__(self, item):
         if item[0] == '_':
