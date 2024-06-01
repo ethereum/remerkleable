@@ -128,7 +128,7 @@ class StableContainer(ComplexView):
 
     @classmethod
     def fields(cls) -> Dict[str, Type[View]]:
-        { fkey: ftyp for fkey, (_, ftyp) in cls._field_indices.items() }
+        return { fkey: ftyp for fkey, (_, ftyp) in cls._field_indices.items() }
 
     @classmethod
     def is_fixed_byte_length(cls) -> bool:
