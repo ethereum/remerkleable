@@ -2,20 +2,21 @@
 # The EIP is still under review, functionality may change or go away without deprecation.
 
 import io
-from typing import Any, BinaryIO, Dict, List as PyList, Optional, Tuple, TypeVar, Type, Union as PyUnion, \
+from typing import Any, BinaryIO, Dict, List as PyList, Optional, Tuple, \
+    TypeVar, Type, Union as PyUnion, \
     get_args, get_origin
 from textwrap import indent
 from remerkleable.bitfields import Bitvector
 from remerkleable.complex import ComplexView, Container, FieldOffset, \
     decode_offset, encode_offset
-from remerkleable.core import View, ViewHook, OFFSET_BYTE_LENGTH
+from remerkleable.core import View, ViewHook, ViewMeta, OFFSET_BYTE_LENGTH
 from remerkleable.tree import Gindex, NavigationError, Node, PairNode, \
     get_depth, subtree_fill_to_contents, zero_node, \
     RIGHT_GINDEX
 
-N = TypeVar('N')
-B = TypeVar('B', bound="ComplexView")
-S = TypeVar('S', bound="ComplexView")
+N = TypeVar('N', bound=int)
+B = TypeVar('B', bound='ComplexView')
+S = TypeVar('S', bound='ComplexView')
 
 
 def all_fields(cls) -> Dict[str, Tuple[Type[View], bool]]:
@@ -38,37 +39,31 @@ def field_val_repr(self, fkey: str, ftyp: Type[View], fopt: bool) -> str:
             field_repr = field_repr[:i+1] + indent(field_repr[i+1:], ' ' * len(field_start))
         return field_start + field_repr
     except NavigationError:
-        return f"{field_start} *omitted*"
+        return f'{field_start} *omitted*'
 
 
 def repr(self) -> str:
-    return f"{self.__class__.type_repr()}:\n" + '\n'.join(
+    return f'{self.__class__.type_repr()}:\n' + '\n'.join(
         indent(field_val_repr(self, fkey, ftyp, fopt), '  ')
         for fkey, (ftyp, fopt) in self.__class__.fields().items())
 
 
 class StableContainer(ComplexView):
-    _field_indices: Dict[str, Tuple[int, Type[View], bool]]
-    __slots__ = '_field_indices'
+    __slots__ = '_field_indices', 'N'
+    _field_indices: Dict[str, Tuple[int, Type[View]]]
+    N: int
 
     def __new__(cls, backing: Optional[Node] = None, hook: Optional[ViewHook] = None, **kwargs):
         if backing is not None:
             if len(kwargs) != 0:
-                raise Exception("cannot have both a backing and elements to init fields")
+                raise Exception('Cannot have both a backing and elements to init fields')
             return super().__new__(cls, backing=backing, hook=hook, **kwargs)
-
-        for fkey, (ftyp, fopt) in cls.fields().items():
-            if fkey not in kwargs:
-                if not fopt:
-                    raise AttributeError(f"Field '{fkey}' is required in {cls}")
-                kwargs[fkey] = None
 
         input_nodes = []
         active_fields = Bitvector[cls.N]()
-        for findex, (fkey, (ftyp, fopt)) in enumerate(cls.fields().items()):
+        for fkey, (findex, ftyp) in cls._field_indices.items():
             fnode: Node
-            assert fkey in kwargs
-            finput = kwargs.pop(fkey)
+            finput = kwargs.pop(fkey) if fkey in kwargs else None
             if finput is None:
                 fnode = zero_node(0)
                 active_fields.set(findex, False)
@@ -79,35 +74,61 @@ class StableContainer(ComplexView):
                     fnode = ftyp.coerce_view(finput).get_backing()
                 active_fields.set(findex, True)
             input_nodes.append(fnode)
-
         if len(kwargs) > 0:
-            raise AttributeError(f'The field names [{"".join(kwargs.keys())}] are not defined in {cls}')
+            raise AttributeError(f'Fields [{''.join(kwargs.keys())}] unknown in `{cls.__name__}`')
 
         backing = PairNode(
             left=subtree_fill_to_contents(input_nodes, get_depth(cls.N)),
-            right=active_fields.get_backing())
+            right=active_fields.get_backing(),
+        )
         return super().__new__(cls, backing=backing, hook=hook, **kwargs)
 
-    def __init_subclass__(cls, *args, **kwargs):
-        super().__init_subclass__(*args, **kwargs)
-        cls._field_indices = {
-            fkey: (i, ftyp, fopt)
-            for i, (fkey, (ftyp, fopt)) in enumerate(cls.fields().items())
-        }
-
-    def __class_getitem__(cls, n) -> Type["StableContainer"]:
+    def __init_subclass__(cls, **kwargs):
+        if 'n' not in kwargs:
+            raise TypeError(f'Missing capacity: `{cls.__name__}(StableContainer)`')
+        n = kwargs.pop('n')
+        if not isinstance(n, int):
+            raise TypeError(f'Invalid capacity: `{cls.__name__}(StableContainer[{n}])`')
         if n <= 0:
-            raise Exception(f"invalid stablecontainer capacity: {n}")
+            raise TypeError(f'Unsupported capacity: `{cls.__name__}(StableContainer[{n}])`')
+        cls.N = n
 
-        class StableContainerView(StableContainer):
-            N = n
+    def __class_getitem__(cls, n: int) -> Type['StableContainer']:
+        class StableContainerMeta(ViewMeta):
+            def __new__(cls, name, bases, dct):
+                return super().__new__(cls, name, bases, dct, n=n)
+
+        class StableContainerView(StableContainer, metaclass=StableContainerMeta):
+            def __init_subclass__(cls, *args, **kwargs):
+                if 'N' in cls.__dict__:
+                    raise TypeError(f'Cannot override `N` inside `{cls.__name__}`')
+                cls._field_indices = {}
+                for findex, (fkey, v) in enumerate(cls.__annotations__.items()):
+                    if fkey in cls._field_indices:
+                        raise TypeError(f'Field `{fkey}` defined multiple times in `{cls.__name}`')
+                    if (
+                        get_origin(v) != PyUnion
+                        or len(get_args(v)) != 2
+                        or type(None) not in get_args(v)
+                    ):
+                        raise TypeError(
+                            f'`StableContainer` fields must be `Optional[T]` '
+                            f'but `{cls.__name__}.{fkey}` has type `{v.__name__}`'
+                        )
+                    ftyp = get_args(v)[0] if get_args(v)[0] is not type(None) else get_args(v)[1]
+                    cls._field_indices[fkey] = (findex, ftyp)
+                if len(cls._field_indices) > cls.N:
+                    raise TypeError(
+                        f'`{cls.__name__}` is `StableContainer[{cls.N}]` '
+                        f'but contains {len(cls._field_indices)} fields'
+                    )
 
         StableContainerView.__name__ = StableContainerView.type_repr()
         return StableContainerView
 
     @classmethod
-    def fields(cls) -> Dict[str, Tuple[Type[View], bool]]:
-        return all_fields(cls)
+    def fields(cls) -> Dict[str, Type[View]]:
+        { fkey: ftyp for fkey, (_, ftyp) in cls._field_indices }
 
     @classmethod
     def is_fixed_byte_length(cls) -> bool:
@@ -115,19 +136,12 @@ class StableContainer(ComplexView):
 
     @classmethod
     def min_byte_length(cls) -> int:
-        total = Bitvector[cls.N].type_byte_length()
-        for _, (ftyp, fopt) in cls.fields().items():
-            if fopt:
-                continue
-            if not ftyp.is_fixed_byte_length():
-                total += OFFSET_BYTE_LENGTH
-            total += ftyp.min_byte_length()
-        return total
+        return Bitvector[cls.N].type_byte_length()
 
     @classmethod
     def max_byte_length(cls) -> int:
         total = Bitvector[cls.N].type_byte_length()
-        for _, (ftyp, _) in cls.fields().items():
+        for (_, ftyp) in cls._field_indices.values():
             if not ftyp.is_fixed_byte_length():
                 total += OFFSET_BYTE_LENGTH
             total += ftyp.max_byte_length()
@@ -139,7 +153,7 @@ class StableContainer(ComplexView):
 
     def __getattribute__(self, item):
         if item == 'N':
-            raise AttributeError(f"use .__class__.{item} to access {item}")
+            raise AttributeError(f'Use `.__class__.{item}` to access `{item}`')
         return object.__getattribute__(self, item)
 
     def __getattr__(self, item):
@@ -147,14 +161,12 @@ class StableContainer(ComplexView):
             return super().__getattribute__(item)
         else:
             try:
-                (findex, ftyp, fopt) = self.__class__._field_indices[item]
+                (findex, ftyp) = self.__class__._field_indices[item]
             except KeyError:
-                raise AttributeError(f"unknown attribute {item}")
+                raise AttributeError(f'Unknown field `{item}`')
 
             if not self.active_fields().get(findex):
-                assert fopt
                 return None
-
             data = super().get_backing().get_left()
             fnode = data.getter(2**get_depth(self.__class__.N) + findex)
             return ftyp.view_from_backing(fnode)
@@ -164,13 +176,12 @@ class StableContainer(ComplexView):
             super().__setattr__(key, value)
         else:
             try:
-                (findex, ftyp, fopt) = self.__class__._field_indices[key]
+                (findex, ftyp) = self.__class__._field_indices[key]
             except KeyError:
-                raise AttributeError(f"unknown attribute {key}")
+                raise AttributeError(f'Unknown field `{key}`')
 
             next_backing = self.get_backing()
 
-            assert value is not None or fopt
             active_fields = self.active_fields()
             active_fields.set(findex, value is not None)
             next_backing = next_backing.rebind_right(active_fields.get_backing())
@@ -193,24 +204,25 @@ class StableContainer(ComplexView):
 
     @classmethod
     def type_repr(cls) -> str:
-        return f"StableContainer[{cls.N}]"
+        return f'StableContainer[{cls.N}]'
 
     @classmethod
     def deserialize(cls: Type[S], stream: BinaryIO, scope: int) -> S:
         num_prefix_bytes = Bitvector[cls.N].type_byte_length()
         if scope < num_prefix_bytes:
-            raise ValueError("scope too small, cannot read StableContainer active fields")
+            raise ValueError(f'Scope too small, cannot read `StableContainer[{cls.N}]` active fields')
         active_fields = Bitvector[cls.N].deserialize(stream, num_prefix_bytes)
         scope = scope - num_prefix_bytes
 
-        max_findex = 0
-        field_values: Dict[str, Optional[View]] = {}
+        for findex in range(len(cls._field_indices), cls.N):
+            if active_fields.get(findex):
+                raise Exception(f'Unknown field index {findex}')
+
+        field_values: Dict[str, View] = {}
         dyn_fields: PyList[FieldOffset] = []
         fixed_size = 0
-        for findex, (fkey, (ftyp, _)) in enumerate(cls.fields().items()):
-            max_findex = findex
+        for fkey, (findex, ftyp) in cls._field_indices.items():
             if not active_fields.get(findex):
-                field_values[fkey] = None
                 continue
             if ftyp.is_fixed_byte_length():
                 fsize = ftyp.type_byte_length()
@@ -222,37 +234,41 @@ class StableContainer(ComplexView):
                 fixed_size += OFFSET_BYTE_LENGTH
         if len(dyn_fields) > 0:
             if dyn_fields[0].offset < fixed_size:
-                raise Exception(f"first offset {dyn_fields[0].offset} is "
-                                f"smaller than expected fixed size {fixed_size}")
+                raise Exception(f'First offset {dyn_fields[0].offset} is '
+                                f'smaller than expected fixed size {fixed_size}')
             for i, (fkey, ftyp, foffset) in enumerate(dyn_fields):
                 next_offset = dyn_fields[i + 1].offset if i + 1 < len(dyn_fields) else scope
                 if foffset > next_offset:
-                    raise Exception(f"offset {i} is invalid: {foffset} "
-                                    f"larger than next offset {next_offset}")
+                    raise Exception(f'Offset {i} is invalid: {foffset} '
+                                    f'larger than next offset {next_offset}')
                 fsize = next_offset - foffset
                 f_min_size, f_max_size = ftyp.min_byte_length(), ftyp.max_byte_length()
                 if not (f_min_size <= fsize <= f_max_size):
-                    raise Exception(f"offset {i} is invalid, size out of bounds: "
-                                    f"{foffset}, next {next_offset}, implied size: {fsize}, "
-                                    f"size bounds: [{f_min_size}, {f_max_size}]")
+                    raise Exception(f'Offset {i} is invalid, size out of bounds: '
+                                    f'{foffset}, next {next_offset}, implied size: {fsize}, '
+                                    f'size bounds: [{f_min_size}, {f_max_size}]')
                 field_values[fkey] = ftyp.deserialize(stream, fsize)
-        for findex in range(max_findex + 1, cls.N):
-            if active_fields.get(findex):
-                raise Exception(f"unknown field index {findex}")
         return cls(**field_values)  # type: ignore
 
     def serialize(self, stream: BinaryIO) -> int:
         active_fields = self.active_fields()
         num_prefix_bytes = active_fields.serialize(stream)
 
-        num_data_bytes = sum(
-            ftyp.type_byte_length() if ftyp.is_fixed_byte_length() else OFFSET_BYTE_LENGTH
-            for findex, (_, (ftyp, _)) in enumerate(self.__class__.fields().items())
-            if active_fields.get(findex))
+        num_data_bytes = 0
+        has_dyn_fields = False
+        for (findex, ftyp) in self.__class__._field_indices.values():
+            if not active_fields.get(findex):
+                continue
+            if ftyp.is_fixed_byte_length():
+                num_data_bytes += ftyp.type_byte_length()
+            else:
+                num_data_bytes += OFFSET_BYTE_LENGTH
+                has_dyn_fields = True
 
-        temp_dyn_stream = io.BytesIO()
+        if has_dyn_fields:
+            temp_dyn_stream = io.BytesIO()
         data = super().get_backing().get_left()
-        for findex, (_, (ftyp, _)) in enumerate(self.__class__.fields().items()):
+        for (findex, ftyp) in self.__class__._field_indices.values():
             if not active_fields.get(findex):
                 continue
             fnode = data.getter(2**get_depth(self.__class__.N) + findex)
@@ -262,8 +278,9 @@ class StableContainer(ComplexView):
             else:
                 encode_offset(stream, num_data_bytes)
                 num_data_bytes += v.serialize(temp_dyn_stream)  # type: ignore
-        temp_dyn_stream.seek(0)
-        stream.write(temp_dyn_stream.read(num_data_bytes))
+        if has_dyn_fields:
+            temp_dyn_stream.seek(0)
+            stream.write(temp_dyn_stream.read())
 
         return num_prefix_bytes + num_data_bytes
 
@@ -271,16 +288,14 @@ class StableContainer(ComplexView):
     def navigate_type(cls, key: Any) -> Type[View]:
         if key == '__active_fields__':
             return Bitvector[cls.N]
-        (_, ftyp, fopt) = cls._field_indices[key]
-        if fopt:
-            return Optional[ftyp]
-        return ftyp
+        (_, ftyp) = cls._field_indices[key]
+        return Optional[ftyp]
 
     @classmethod
     def key_to_static_gindex(cls, key: Any) -> Gindex:
         if key == '__active_fields__':
             return RIGHT_GINDEX
-        (findex, _, _) = cls._field_indices[key]
+        (findex, _) = cls._field_indices[key]
         return 2**get_depth(cls.N) * 2 + findex
 
 
@@ -378,7 +393,7 @@ class Profile(ComplexView):
         oindex = 0
         for fkey, (_, fopt) in self.__class__.fields().items():
             if fopt:
-                (findex, _, _) = self.__class__.B._field_indices[fkey]
+                (findex, _) = self.__class__.B._field_indices[fkey]
                 optional_fields.set(oindex, active_fields.get(findex))
                 oindex += 1
         return optional_fields
@@ -397,7 +412,7 @@ class Profile(ComplexView):
             except KeyError:
                 raise AttributeError(f"unknown attribute {item}")
             try:
-                (findex, _, _) = self.__class__.B._field_indices[item]
+                (findex, _) = self.__class__.B._field_indices[item]
             except KeyError:
                 raise AttributeError(f"unknown attribute {item} in base")
 
@@ -421,7 +436,7 @@ class Profile(ComplexView):
             except KeyError:
                 raise AttributeError(f"unknown attribute {key}")
             try:
-                (findex, _, _) = self.__class__.B._field_indices[key]
+                (findex, _) = self.__class__.B._field_indices[key]
             except KeyError:
                 raise AttributeError(f"unknown attribute {key} in base")
 
@@ -535,7 +550,7 @@ class Profile(ComplexView):
             n = len(self.__class__.B.fields())
         for fkey, (ftyp, _) in self.__class__.fields().items():
             if issubclass(self.__class__.B, StableContainer):
-                (findex, _, _) = self.__class__.B._field_indices[fkey]
+                (findex, _) = self.__class__.B._field_indices[fkey]
                 if not active_fields.get(findex):
                     continue
                 fnode = data.getter(2**get_depth(n) + findex)
@@ -568,7 +583,7 @@ class Profile(ComplexView):
             return RIGHT_GINDEX
         (_, _) = cls.fields()[key]
         if issubclass(cls.B, StableContainer):
-            (findex, _, _) = cls.B._field_indices[key]
+            (findex, _) = cls.B._field_indices[key]
             return 2**get_depth(cls.B.N) * 2 + findex
         else:
             findex = cls.B._field_indices[key]

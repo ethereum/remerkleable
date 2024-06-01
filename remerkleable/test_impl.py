@@ -482,7 +482,7 @@ def test_stable_container():
     # Defines the common merkleization format and a portable serialization format
     class Shape(StableContainer[4]):
         side: Optional[uint16]
-        color: uint8
+        color: Optional[uint8]
         radius: Optional[uint16]
 
     # Inherits merkleization format from `Shape`, but is serialized more compactly
@@ -844,13 +844,13 @@ def test_stable_container():
     # basic container
     class Shape1(StableContainer[4]):
         side: Optional[uint16]
-        color: uint8
+        color: Optional[uint8]
         radius: Optional[uint16]
 
     # basic container with different depth
     class Shape2(StableContainer[8]):
         side: Optional[uint16]
-        color: uint8
+        color: Optional[uint8]
         radius: Optional[uint16]
 
     # basic container with variable fields
