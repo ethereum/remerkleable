@@ -75,7 +75,7 @@ class StableContainer(ComplexView):
                 active_fields.set(findex, True)
             input_nodes.append(fnode)
         if len(kwargs) > 0:
-            raise AttributeError(f'Fields [{''.join(kwargs.keys())}] unknown in `{cls.__name__}`')
+            raise AttributeError(f'Fields [{"".join(kwargs.keys())}] unknown in `{cls.__name__}`')
 
         backing = PairNode(
             left=subtree_fill_to_contents(input_nodes, get_depth(cls.N)),
