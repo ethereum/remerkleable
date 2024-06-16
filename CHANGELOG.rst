@@ -1,6 +1,17 @@
 Changelog
 ==========
 
+v0.1.27
+--------
+
+- Fix `Container`: add `__hash__` to match the `__eq__` that was added in `v0.1.26`.
+
+v0.1.26
+--------
+
+- Add `__eq__` support with fields-length check to `Container`,
+  to handle 0-padding difference between containers with additional fields.
+
 v0.1.25
 --------
 
