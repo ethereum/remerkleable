@@ -1,6 +1,11 @@
 Changelog
 ==========
 
+v0.1.28
+--------
+
+- Support EIP-7495: `StableContainer` and `Profile`, by @etan-status
+
 v0.1.27
 --------
 
