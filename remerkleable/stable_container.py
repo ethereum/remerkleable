@@ -173,6 +173,13 @@ class StableContainer(ComplexView):
     def item_elem_cls(cls, i: int) -> Type[View]:
         return list(cls._field_indices.values())[i]
 
+    @classmethod
+    def default_node(cls) -> Node:
+        return PairNode(
+            left=subtree_fill_to_contents([], cls.tree_depth()),
+            right=Bitvector[cls.N].default_node(),
+        )
+
     def active_fields(self) -> Bitvector:
         active_fields_node = super().get_backing().get_right()
         return Bitvector[self.__class__.N].view_from_backing(active_fields_node)
@@ -319,11 +326,11 @@ class Profile(ComplexView):
             return super().__new__(cls, backing=backing, hook=hook, **kwargs)
 
         extra_kw = kwargs.copy()
-        for fkey, (_, _, fopt) in cls._field_indices.items():
+        for fkey, (_, ftyp, fopt) in cls._field_indices.items():
             if fkey in extra_kw:
                 extra_kw.pop(fkey)
             elif not fopt:
-                raise AttributeError(f'Field `{fkey}` is required in {cls.__name__}')
+                kwargs[fkey] = ftyp.view_from_backing(ftyp.default_node())
             else:
                 pass
         if len(extra_kw) > 0:
@@ -547,6 +554,19 @@ class Profile(ComplexView):
     @classmethod
     def item_elem_cls(cls, i: int) -> Type[View]:
         return cls.B.item_elem_cls(i)
+
+    @classmethod
+    def default_node(cls) -> Node:
+        fnodes = [zero_node(0)] * cls.B.N
+        active_fields = Bitvector[cls.B.N]()
+        for (findex, ftyp, fopt) in cls._field_indices.values():
+            if not fopt:
+                fnodes[findex] = ftyp.default_node()
+                active_fields.set(findex, True)
+        return PairNode(
+            left=subtree_fill_to_contents(fnodes, cls.tree_depth()),
+            right=active_fields.get_backing(),
+        )
 
     def active_fields(self) -> Bitvector:
         active_fields_node = super().get_backing().get_right()
