@@ -26,7 +26,7 @@ def stable_get(self, findex, ftyp, n):
         return None
     data = self.get_backing().get_left()
     fnode = data.getter(2**get_depth(n) + findex)
-    return ftyp.view_from_backing(fnode)
+    return ftyp.view_from_backing(fnode, lambda v: stable_set(self, findex, ftyp, n, v))
 
 
 def stable_set(self, findex, ftyp, n, value):
