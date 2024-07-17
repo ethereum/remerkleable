@@ -141,6 +141,10 @@ class StableContainer(ComplexView):
         return StableContainerView
 
     @classmethod
+    def coerce_view(cls: Type[SV], v: Any) -> SV:
+        return cls(**{fkey: getattr(v, fkey) for fkey in cls.fields().keys()})
+
+    @classmethod
     def fields(cls) -> Dict[str, Type[View]]:
         return { fkey: ftyp for fkey, (_, ftyp) in cls._field_indices.items() }
 
@@ -502,6 +506,10 @@ class Profile(ComplexView):
 
         ProfileView.__name__ = ProfileView.type_repr()
         return ProfileView
+
+    @classmethod
+    def coerce_view(cls: Type[BV], v: Any) -> BV:
+        return cls(**{fkey: getattr(v, fkey) for fkey in cls.fields().keys()})
 
     @classmethod
     def fields(cls) -> Dict[str, Tuple[Type[View], bool]]:
