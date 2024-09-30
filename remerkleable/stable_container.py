@@ -107,7 +107,7 @@ class StableContainer(ComplexView):
             raise TypeError(f'Invalid capacity: `StableContainer[{n}]`')
         if n <= 0:
             raise TypeError(f'Unsupported capacity: `StableContainer[{n}]`')
-        cls.N = n
+        cls.N = int(n)
 
     def __class_getitem__(cls, n: int) -> Type['StableContainer']:
         class StableContainerMeta(ViewMeta):
