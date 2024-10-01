@@ -266,6 +266,9 @@ class StableContainer(ComplexView):
                                     f'{foffset}, next {next_offset}, implied size: {fsize}, '
                                     f'size bounds: [{f_min_size}, {f_max_size}]')
                 field_values[fkey] = ftyp.deserialize(stream, fsize)
+        else:
+            if scope != fixed_size:
+                raise Exception(f'Incorrect object size: {scope}, expected: {fixed_size}')
         return cls(**field_values)  # type: ignore
 
     def serialize(self, stream: BinaryIO) -> int:
@@ -677,6 +680,9 @@ class Profile(ComplexView):
                                     f'{foffset}, next {next_offset}, implied size: {fsize}, '
                                     f'size bounds: [{f_min_size}, {f_max_size}]')
                 field_values[fkey] = ftyp.deserialize(stream, fsize)
+        else:
+            if scope != fixed_size:
+                raise Exception(f'Incorrect object size: {scope}, expected: {fixed_size}')
         return cls(**field_values)  # type: ignore
 
     def serialize(self, stream: BinaryIO) -> int:

@@ -541,23 +541,14 @@ def test_stable_container():
     )
     assert all(shape.hash_tree_root() == square_root for shape in shapes)
     assert all(square.hash_tree_root() == square_root for square in squares)
-    try:
+    with pytest.raises(Exception):
         circle = Circle(side=0x42, color=1)
-        assert False
-    except:
-        pass
     for shape in shapes:
-        try:
+        with pytest.raises(Exception):
             circle = Circle(backing=shape.get_backing())
-            assert False
-        except:
-            pass
     for square in squares:
-        try:
+        with pytest.raises(Exception):
             circle = Circle(backing=square.get_backing())
-            assert False
-        except:
-            pass
     for shape in shapes:
         shape.side = 0x1337
     for square in squares:
@@ -579,17 +570,11 @@ def test_stable_container():
     assert all(shape.hash_tree_root() == square_root for shape in shapes)
     assert all(square.hash_tree_root() == square_root for square in squares)
     for square in squares:
-        try:
+        with pytest.raises(Exception):
             square.radius = 0x1337
-            assert False
-        except:
-            pass
     for square in squares:
-        try:
+        with pytest.raises(Exception):
             square.side = None
-            assert False
-        except:
-            pass
 
     # Circle tests
     circle_bytes_stable = bytes.fromhex("06014200")
@@ -617,23 +602,14 @@ def test_stable_container():
     )
     assert all(shape.hash_tree_root() == circle_root for shape in shapes)
     assert all(circle.hash_tree_root() == circle_root for circle in circles)
-    try:
+    with pytest.raises(Exception):
         square = Square(radius=0x42, color=1)
-        assert False
-    except:
-        pass
     for shape in shapes:
-        try:
+        with pytest.raises(Exception):
             square = Square(backing=shape.get_backing())
-            assert False
-        except:
-            pass
     for circle in circles:
-        try:
+        with pytest.raises(Exception):
             square = Square(backing=circle.get_backing())
-            assert False
-        except:
-            pass
 
     # SquarePair tests
     square_pair_bytes_stable = bytes.fromhex("080000000c0000000342000103690001")
@@ -712,45 +688,24 @@ def test_stable_container():
     shape_bytes = bytes.fromhex("0201")
     assert shape.encode_bytes() == shape_bytes
     assert Shape.decode_bytes(shape_bytes) == shape
-    try:
+    with pytest.raises(Exception):
         shape = Square.decode_bytes(shape_bytes)
-        assert False
-    except:
-        pass
-    try:
+    with pytest.raises(Exception):
         shape = Circle.decode_bytes(shape_bytes)
-        assert False
-    except:
-        pass
     shape = Shape(side=0x42, color=1, radius=0x42)
     shape_bytes = bytes.fromhex("074200014200")
     assert shape.encode_bytes() == shape_bytes
     assert Shape.decode_bytes(shape_bytes) == shape
-    try:
+    with pytest.raises(Exception):
         shape = Square.decode_bytes(shape_bytes)
-        assert False
-    except:
-        pass
-    try:
+    with pytest.raises(Exception):
         shape = Circle.decode_bytes(shape_bytes)
-        assert False
-    except:
-        pass
-    try:
+    with pytest.raises(Exception):
         shape = Shape.decode_bytes("00")
-        assert False
-    except:
-        pass
-    try:
+    with pytest.raises(Exception):
         square = Square(radius=0x42, color=1)
-        assert False
-    except:
-        pass
-    try:
+    with pytest.raises(Exception):
         circle = Circle(side=0x42, color=1)
-        assert False
-    except:
-        pass
 
     # Surrounding container tests
     class ShapeContainer(Container):
