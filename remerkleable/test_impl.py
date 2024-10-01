@@ -706,6 +706,10 @@ def test_stable_container():
         square = Square(radius=0x42, color=1)
     with pytest.raises(Exception):
         circle = Circle(side=0x42, color=1)
+    with pytest.raises(Exception):
+        square = Square.coerce_view(Shape(radius=0x42, color=1))
+    with pytest.raises(Exception):
+        square = Square(backing=Circle(radius=0x42, color=1).get_backing())
 
     # Surrounding container tests
     class ShapeContainer(Container):
@@ -740,6 +744,34 @@ def test_stable_container():
             active_fields=Bitvector[4](False, True, True, False),
         ),
     ).hash_tree_root()
+
+    # Unsupported surrounding container tests
+    with pytest.raises(Exception):
+        shapes = List[Square, 5].coerce_view(
+            List[Circle, 5](Circle(radius=0x42, color=1)))
+    with pytest.raises(Exception):
+        shapes = Vector[Square, 1].coerce_view(
+            Vector[Circle, 1](Circle(radius=0x42, color=1)))
+
+    class SquareContainer(Container):
+        shape: Square
+
+    class CircleContainer(Container):
+        shape: Circle
+
+    with pytest.raises(Exception):
+        shape = SquareContainer.coerce_view(
+            CircleContainer(shape=Circle(radius=0x42, color=1)))
+
+    class SquareStableContainer(StableContainer[1]):
+        shape: Optional[Square]
+
+    class CircleStableContainer(StableContainer[1]):
+        shape: Optional[Circle]
+
+    with pytest.raises(Exception):
+        shape = SquareStableContainer.coerce_view(
+            CircleStableContainer(shape=Circle(radius=0x42, color=1)))
 
     # basic container
     class Shape1(StableContainer[4]):

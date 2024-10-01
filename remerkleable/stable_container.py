@@ -11,7 +11,7 @@ from remerkleable.bitfields import Bitlist, Bitvector
 from remerkleable.byte_arrays import ByteList, ByteVector
 from remerkleable.complex import ComplexView, Container, FieldOffset, List, Vector, \
     decode_offset, encode_offset
-from remerkleable.core import View, ViewHook, ViewMeta, OFFSET_BYTE_LENGTH
+from remerkleable.core import BackedView, View, ViewHook, ViewMeta, OFFSET_BYTE_LENGTH
 from remerkleable.tree import Gindex, NavigationError, Node, PairNode, \
     get_depth, subtree_fill_to_contents, zero_node, \
     RIGHT_GINDEX
@@ -84,7 +84,9 @@ class StableContainer(ComplexView):
                 fnode = zero_node(0)
                 active_fields.set(findex, False)
             else:
-                if isinstance(finput, View):
+                if isinstance(finput, BackedView):
+                    fnode = ftyp(backing=finput.get_backing()).get_backing()
+                elif isinstance(finput, View):
                     fnode = finput.get_backing()
                 else:
                     fnode = ftyp.coerce_view(finput).get_backing()
@@ -330,6 +332,15 @@ class Profile(ComplexView):
         if backing is not None:
             if len(kwargs) != 0:
                 raise Exception('Cannot have both a backing and elements to init fields')
+            active_fields = Bitvector[cls.B.N].view_from_backing(backing.get_right())
+            for fkey, (findex, _) in cls.B._field_indices.items():
+                if fkey not in cls._field_indices:
+                    if active_fields.get(findex):
+                        raise ValueError(f'Cannot convert to `{cls.__name__}`: {fkey} unsupported')
+                else:
+                    (_, _, fopt) = cls._field_indices[fkey]
+                    if not fopt and not active_fields.get(findex):
+                        raise ValueError(f'Cannot convert to `{cls.__name__}`: {fkey} is required')
             return super().__new__(cls, backing=backing, hook=hook, **kwargs)
 
         extra_kw = kwargs.copy()

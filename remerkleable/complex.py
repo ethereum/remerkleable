@@ -5,7 +5,8 @@ from textwrap import indent
 from collections.abc import Sequence as ColSequence
 from itertools import chain
 import io
-from remerkleable.core import View, BasicView, OFFSET_BYTE_LENGTH, ViewHook, ObjType, ObjParseException
+from remerkleable.core import View, BackedView, BasicView, OFFSET_BYTE_LENGTH,\
+    ViewHook, ObjType, ObjParseException
 from remerkleable.basic import uint256, uint8, uint32
 from remerkleable.tree import Node, subtree_fill_to_length, subtree_fill_to_contents,\
     zero_node, Gindex, PairNode, to_gindex, NavigationError, get_depth, RIGHT_GINDEX
@@ -283,7 +284,9 @@ class List(MonoSubtreeView):
                 raise Exception(f"too many list inputs: {len(vals)}, limit is: {limit}")
             input_views = []
             for el in vals:
-                if isinstance(el, View):
+                if isinstance(el, BackedView):
+                    input_views.append(elem_cls(backing=el.get_backing()))
+                elif isinstance(el, View):
                     input_views.append(el)
                 else:
                     input_views.append(elem_cls.coerce_view(el))
@@ -527,7 +530,9 @@ class Vector(MonoSubtreeView):
                 raise Exception(f"invalid inputs length: {len(vals)}, vector length is: {vector_length}")
             input_views = []
             for el in vals:
-                if isinstance(el, View):
+                if isinstance(el, BackedView):
+                    input_views.append(elem_cls(backing=el.get_backing()))
+                elif isinstance(el, View):
                     input_views.append(el)
                 else:
                     input_views.append(elem_cls.coerce_view(el))
@@ -731,7 +736,9 @@ class Container(_ContainerBase):
             fnode: Node
             if fkey in kwargs:
                 finput = kwargs.pop(fkey)
-                if isinstance(finput, View):
+                if isinstance(finput, BackedView):
+                    fnode = ftyp(backing=finput.get_backing()).get_backing()
+                elif isinstance(finput, View):
                     fnode = finput.get_backing()
                 else:
                     fnode = ftyp.coerce_view(finput).get_backing()
