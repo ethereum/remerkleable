@@ -707,8 +707,6 @@ def test_stable_container():
     with pytest.raises(Exception):
         circle = Circle(side=0x42, color=1)
     with pytest.raises(Exception):
-        square = Square.coerce_view(Shape(radius=0x42, color=1))
-    with pytest.raises(Exception):
         square = Square(backing=Circle(radius=0x42, color=1).get_backing())
 
     # Surrounding container tests
@@ -747,11 +745,11 @@ def test_stable_container():
 
     # Unsupported surrounding container tests
     with pytest.raises(Exception):
-        shapes = List[Square, 5].coerce_view(
-            List[Circle, 5](Circle(radius=0x42, color=1)))
+        shapes = List[Square, 5](
+            backing=List[Circle, 5](Circle(radius=0x42, color=1)).get_backing())
     with pytest.raises(Exception):
-        shapes = Vector[Square, 1].coerce_view(
-            Vector[Circle, 1](Circle(radius=0x42, color=1)))
+        shapes = Vector[Square, 1](
+            backing=Vector[Circle, 1](Circle(radius=0x42, color=1)).get_backing())
 
     class SquareContainer(Container):
         shape: Square
@@ -760,8 +758,8 @@ def test_stable_container():
         shape: Circle
 
     with pytest.raises(Exception):
-        shape = SquareContainer.coerce_view(
-            CircleContainer(shape=Circle(radius=0x42, color=1)))
+        shape = SquareContainer(
+            backing=CircleContainer(shape=Circle(radius=0x42, color=1)).get_backing())
 
     class SquareStableContainer(StableContainer[1]):
         shape: Optional[Square]
@@ -770,8 +768,19 @@ def test_stable_container():
         shape: Optional[Circle]
 
     with pytest.raises(Exception):
-        shape = SquareStableContainer.coerce_view(
-            CircleStableContainer(shape=Circle(radius=0x42, color=1)))
+        shape = SquareStableContainer(
+            backing=CircleStableContainer(shape=Circle(radius=0x42, color=1)).get_backing())
+
+    class NestedSquareContainer(Container):
+        item: SquareContainer
+
+    class NestedCircleContainer(Container):
+        item: CircleContainer
+
+    with pytest.raises(Exception):
+        shape = NestedSquareContainer(
+            backing=NestedCircleContainer(
+                item=CircleContainer(shape=Circle(radius=0x42, color=1))).get_backing())
 
     # basic container
     class Shape1(StableContainer[4]):

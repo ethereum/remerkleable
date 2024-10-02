@@ -108,6 +108,11 @@ class MonoSubtreeView(ColSequence, ComplexView):
             else:
                 return ComplexElemIter(backing, tree_depth, length, elem_type)
 
+    def check_backing(self):
+        for el in self:
+            if isinstance(el, BackedView):
+                el.check_backing()
+
     @classmethod
     def deserialize(cls: Type[M], stream: BinaryIO, scope: int) -> M:
         elem_cls = cls.element_cls()
@@ -284,9 +289,7 @@ class List(MonoSubtreeView):
                 raise Exception(f"too many list inputs: {len(vals)}, limit is: {limit}")
             input_views = []
             for el in vals:
-                if isinstance(el, BackedView):
-                    input_views.append(elem_cls(backing=el.get_backing()))
-                elif isinstance(el, View):
+                if isinstance(el, View):
                     input_views.append(el)
                 else:
                     input_views.append(elem_cls.coerce_view(el))
@@ -530,9 +533,7 @@ class Vector(MonoSubtreeView):
                 raise Exception(f"invalid inputs length: {len(vals)}, vector length is: {vector_length}")
             input_views = []
             for el in vals:
-                if isinstance(el, BackedView):
-                    input_views.append(elem_cls(backing=el.get_backing()))
-                elif isinstance(el, View):
+                if isinstance(el, View):
                     input_views.append(el)
                 else:
                     input_views.append(elem_cls.coerce_view(el))
@@ -719,6 +720,11 @@ class _ContainerBase(ComplexView):
     def fields(cls) -> Fields:  # base condition for the subclasses deriving the fields
         return {}
 
+    def check_backing(self):
+        for el in self:
+            if isinstance(el, BackedView):
+                el.check_backing()
+
 
 class Container(_ContainerBase):
     _field_indices: Dict[str, int]
@@ -736,9 +742,7 @@ class Container(_ContainerBase):
             fnode: Node
             if fkey in kwargs:
                 finput = kwargs.pop(fkey)
-                if isinstance(finput, BackedView):
-                    fnode = ftyp(backing=finput.get_backing()).get_backing()
-                elif isinstance(finput, View):
+                if isinstance(finput, View):
                     fnode = finput.get_backing()
                 else:
                     fnode = ftyp.coerce_view(finput).get_backing()

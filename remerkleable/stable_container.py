@@ -84,9 +84,7 @@ class StableContainer(ComplexView):
                 fnode = zero_node(0)
                 active_fields.set(findex, False)
             else:
-                if isinstance(finput, BackedView):
-                    fnode = ftyp(backing=finput.get_backing()).get_backing()
-                elif isinstance(finput, View):
+                if isinstance(finput, View):
                     fnode = finput.get_backing()
                 else:
                     fnode = ftyp.coerce_view(finput).get_backing()
@@ -189,6 +187,17 @@ class StableContainer(ComplexView):
     def active_fields(self) -> Bitvector:
         active_fields_node = super().get_backing().get_right()
         return Bitvector[self.__class__.N].view_from_backing(active_fields_node)
+
+    def check_backing(self):
+        active_fields = self.active_fields()
+        for fkey, (findex, _) in self.__class__._field_indices.items():
+            if active_fields.get(findex):
+                value = getattr(self, fkey)
+                if isinstance(value, BackedView):
+                    value.check_backing()
+        for findex in range(len(self.__class__._field_indices), self.__class__.N):
+            if active_fields.get(findex):
+                raise ValueError(f'`{self.__class__.__name__}` invalid: Unknown field {findex}')
 
     def __getattribute__(self, item):
         if item == 'N':
@@ -332,15 +341,6 @@ class Profile(ComplexView):
         if backing is not None:
             if len(kwargs) != 0:
                 raise Exception('Cannot have both a backing and elements to init fields')
-            active_fields = Bitvector[cls.B.N].view_from_backing(backing.get_right())
-            for fkey, (findex, _) in cls.B._field_indices.items():
-                if fkey not in cls._field_indices:
-                    if active_fields.get(findex):
-                        raise ValueError(f'Cannot convert to `{cls.__name__}`: {fkey} unsupported')
-                else:
-                    (_, _, fopt) = cls._field_indices[fkey]
-                    if not fopt and not active_fields.get(findex):
-                        raise ValueError(f'Cannot convert to `{cls.__name__}`: {fkey} is required')
             return super().__new__(cls, backing=backing, hook=hook, **kwargs)
 
         extra_kw = kwargs.copy()
@@ -605,6 +605,24 @@ class Profile(ComplexView):
                 optional_fields.set(oindex, active_fields.get(findex))
                 oindex += 1
         return optional_fields
+
+    def check_backing(self):
+        active_fields = self.active_fields()
+        for fkey, (findex, _) in self.__class__.B._field_indices.items():
+            if fkey not in self.__class__._field_indices:
+                if active_fields.get(findex):
+                    raise ValueError(f'`{self.__class__.__name__}` invalid: {fkey} unsupported')
+            elif active_fields.get(findex):
+                value = getattr(self, fkey)
+                if isinstance(value, BackedView):
+                    value.check_backing()
+            else:
+                (_, _, fopt) = self.__class__._field_indices[fkey]
+                if not fopt:
+                    raise ValueError(f'`{self.__class__.__name__}` invalid: {fkey} is required')
+        for findex in range(len(self.__class__.B._field_indices), self.__class__.B.N):
+            if active_fields.get(findex):
+                raise ValueError(f'`{self.__class__.__name__}` invalid: Unknown field {findex}')
 
     def __getattribute__(self, item):
         if item == 'B':

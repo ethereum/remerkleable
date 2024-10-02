@@ -238,6 +238,9 @@ class BackedView(View):
         out._hook = hook
         return out
 
+    def __init__(self, *args, **kwargs):
+        self.check_backing()
+
     def get_backing(self) -> Node:
         return self._backing
 
@@ -246,6 +249,9 @@ class BackedView(View):
         # Propagate up the change if the view is hooked to a super view
         if self._hook is not None:
             self._hook(self)
+
+    def check_backing(self):
+        pass
 
 
 BV = TypeVar('BV', bound="BasicView")
