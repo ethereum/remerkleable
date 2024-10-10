@@ -802,7 +802,7 @@ def test_stable_container():
     shape = NestedCircleContainer(item=CircleContainer(shape=Circle(radius=0x42, color=1)))
     assert NestedCircleContainer.from_base(shape.to_base(NestedShapeContainer)) == shape
     with pytest.raises(Exception):
-        shape = NestedSquareContainer.from_base(shape.to_base(NestedShapeContainer)) == shape
+        shape = NestedSquareContainer.from_base(shape.to_base(NestedShapeContainer))
 
     # basic container
     class Shape1(StableContainer[4]):
