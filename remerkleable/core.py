@@ -238,9 +238,6 @@ class BackedView(View):
         out._hook = hook
         return out
 
-    def __init__(self, *args, **kwargs):
-        self.check_backing()
-
     def get_backing(self) -> Node:
         return self._backing
 
@@ -252,6 +249,15 @@ class BackedView(View):
 
     def check_backing(self):
         pass
+
+    @classmethod
+    def from_base(cls: Type[BackedV], value) -> BackedV:
+        res = cls(backing=value.get_backing())
+        res.check_backing()
+        return res
+
+    def to_base(self, cls: Type[BackedV]) -> BackedV:
+        return cls(backing=self.get_backing())
 
 
 BV = TypeVar('BV', bound="BasicView")
