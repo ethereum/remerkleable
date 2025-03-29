@@ -146,7 +146,7 @@ class StableContainer(ComplexView):
 
     @classmethod
     def fields(cls) -> Dict[str, Type[View]]:
-        return { fkey: ftyp for fkey, (_, ftyp) in cls._field_indices.items() }
+        return {fkey: ftyp for fkey, (_, ftyp) in cls._field_indices.items()}
 
     @classmethod
     def is_fixed_byte_length(cls) -> bool:
@@ -331,6 +331,119 @@ class StableContainer(ComplexView):
         return 2**get_depth(cls.N) * 2 + findex
 
 
+def has_compatible_merkleization(ftyp, ftyp_base) -> bool:  # noqa: C901
+    if ftyp == ftyp_base:
+        return True
+    if issubclass(ftyp, boolean):
+        return issubclass(ftyp_base, boolean)
+    if issubclass(ftyp, uint8):
+        return issubclass(ftyp_base, uint8)
+    if issubclass(ftyp, uint16):
+        return issubclass(ftyp_base, uint16)
+    if issubclass(ftyp, uint32):
+        return issubclass(ftyp_base, uint32)
+    if issubclass(ftyp, uint64):
+        return issubclass(ftyp_base, uint64)
+    if issubclass(ftyp, uint128):
+        return issubclass(ftyp_base, uint128)
+    if issubclass(ftyp, uint256):
+        return issubclass(ftyp_base, uint256)
+    if issubclass(ftyp, Bitlist):
+        return (
+            issubclass(ftyp_base, Bitlist)
+            and ftyp.limit() == ftyp_base.limit()
+        )
+    if issubclass(ftyp, Bitvector):
+        return (
+            issubclass(ftyp_base, Bitvector)
+            and ftyp.vector_length() == ftyp_base.vector_length()
+        )
+    if issubclass(ftyp, ByteList):
+        if issubclass(ftyp_base, ByteList):
+            return ftyp.limit() == ftyp_base.limit()
+        return (
+            issubclass(ftyp_base, List)
+            and ftyp.limit() == ftyp_base.limit()
+            and issubclass(ftyp_base.element_cls(), uint8)
+        )
+    if issubclass(ftyp, ByteVector):
+        if issubclass(ftyp_base, ByteVector):
+            return ftyp.vector_length() == ftyp_base.vector_length()
+        return (
+            issubclass(ftyp_base, Vector)
+            and ftyp.vector_length() == ftyp_base.vector_length()
+            and issubclass(ftyp_base.element_cls(), uint8)
+        )
+    if issubclass(ftyp, List):
+        if issubclass(ftyp_base, ByteList):
+            return (
+                ftyp.limit() == ftyp_base.limit()
+                and issubclass(ftyp.element_cls(), uint8)
+            )
+        return (
+            issubclass(ftyp_base, List)
+            and ftyp.limit() == ftyp_base.limit()
+            and has_compatible_merkleization(ftyp.element_cls(), ftyp_base.element_cls())
+        )
+    if issubclass(ftyp, Vector):
+        if issubclass(ftyp_base, ByteVector):
+            return (
+                ftyp.vector_length() == ftyp_base.vector_length()
+                and issubclass(ftyp.element_cls(), uint8)
+            )
+        return (
+            issubclass(ftyp_base, Vector)
+            and ftyp.vector_length() == ftyp_base.vector_length()
+            and has_compatible_merkleization(ftyp.element_cls(), ftyp_base.element_cls())
+        )
+    if issubclass(ftyp, Container):
+        if not issubclass(ftyp_base, Container):
+            return False
+        fields = ftyp.fields()
+        fields_base = ftyp_base.fields()
+        if len(fields) != len(fields_base):
+            return False
+        for (fkey, t), (fkey_b, t_b) in zip(fields.items(), fields_base.items()):
+            if fkey != fkey_b:
+                return False
+            if not has_compatible_merkleization(t, t_b):
+                return False
+        return True
+    if issubclass(ftyp, StableContainer):
+        if not issubclass(ftyp_base, StableContainer):
+            return False
+        if ftyp.N != ftyp_base.N:
+            return False
+        fields = ftyp.fields()
+        fields_base = ftyp_base.fields()
+        if len(fields) != len(fields_base):
+            return False
+        for (fkey, t), (fkey_b, t_b) in zip(fields.items(), fields_base.items()):
+            if fkey != fkey_b:
+                return False
+            if not has_compatible_merkleization(t, t_b):
+                return False
+        return True
+    if issubclass(ftyp, Profile):
+        if issubclass(ftyp_base, StableContainer):
+            return has_compatible_merkleization(ftyp.B, ftyp_base)
+        if not issubclass(ftyp_base, Profile):
+            return False
+        if not has_compatible_merkleization(ftyp.B, ftyp_base.B):
+            return False
+        fields = ftyp.fields()
+        fields_base = ftyp_base.fields()
+        if len(fields) != len(fields_base):
+            return False
+        for (fkey, (t, _)), (fkey_b, (t_b, _)) in zip(fields.items(), fields_base.items()):
+            if fkey != fkey_b:
+                return False
+            if not has_compatible_merkleization(t, t_b):
+                return False
+        return True
+    return False
+
+
 class Profile(ComplexView):
     __slots__ = '_field_indices', '_o', 'B'
     _field_indices: Dict[str, Tuple[int, Type[View], bool]]
@@ -366,117 +479,6 @@ class Profile(ComplexView):
         cls.B = b
 
     def __class_getitem__(cls, b) -> Type['Profile']:
-        def has_compatible_merkleization(ftyp, ftyp_base) -> bool:
-            if ftyp == ftyp_base:
-                return True
-            if issubclass(ftyp, boolean):
-                return issubclass(ftyp_base, boolean)
-            if issubclass(ftyp, uint8):
-                return issubclass(ftyp_base, uint8)
-            if issubclass(ftyp, uint16):
-                return issubclass(ftyp_base, uint16)
-            if issubclass(ftyp, uint32):
-                return issubclass(ftyp_base, uint32)
-            if issubclass(ftyp, uint64):
-                return issubclass(ftyp_base, uint64)
-            if issubclass(ftyp, uint128):
-                return issubclass(ftyp_base, uint128)
-            if issubclass(ftyp, uint256):
-                return issubclass(ftyp_base, uint256)
-            if issubclass(ftyp, Bitlist):
-                return (
-                    issubclass(ftyp_base, Bitlist)
-                    and ftyp.limit() == ftyp_base.limit()
-                )
-            if issubclass(ftyp, Bitvector):
-                return (
-                    issubclass(ftyp_base, Bitvector)
-                    and ftyp.vector_length() == ftyp_base.vector_length()
-                )
-            if issubclass(ftyp, ByteList):
-                if issubclass(ftyp_base, ByteList):
-                    return ftyp.limit() == ftyp_base.limit()
-                return (
-                    issubclass(ftyp_base, List)
-                    and ftyp.limit() == ftyp_base.limit()
-                    and issubclass(ftyp_base.element_cls(), uint8)
-                )
-            if issubclass(ftyp, ByteVector):
-                if issubclass(ftyp_base, ByteVector):
-                    return ftyp.vector_length() == ftyp_base.vector_length()
-                return (
-                    issubclass(ftyp_base, Vector)
-                    and ftyp.vector_length() == ftyp_base.vector_length()
-                    and issubclass(ftyp_base.element_cls(), uint8)
-                )
-            if issubclass(ftyp, List):
-                if issubclass(ftyp_base, ByteList):
-                    return (
-                        ftyp.limit() == ftyp_base.limit()
-                        and issubclass(ftyp.element_cls(), uint8)
-                    )
-                return (
-                    issubclass(ftyp_base, List)
-                    and ftyp.limit() == ftyp_base.limit()
-                    and has_compatible_merkleization(ftyp.element_cls(), ftyp_base.element_cls())
-                )
-            if issubclass(ftyp, Vector):
-                if issubclass(ftyp_base, ByteVector):
-                    return (
-                        ftyp.vector_length() == ftyp_base.vector_length()
-                        and issubclass(ftyp.element_cls(), uint8)
-                    )
-                return (
-                    issubclass(ftyp_base, Vector)
-                    and ftyp.vector_length() == ftyp_base.vector_length()
-                    and has_compatible_merkleization(ftyp.element_cls(), ftyp_base.element_cls())
-                )
-            if issubclass(ftyp, Container):
-                if not issubclass(ftyp_base, Container):
-                    return False
-                fields = ftyp.fields()
-                fields_base = ftyp_base.fields()
-                if len(fields) != len(fields_base):
-                    return False
-                for (fkey, t), (fkey_b, t_b) in zip(fields.items(), fields_base.items()):
-                    if fkey != fkey_b:
-                        return False
-                    if not has_compatible_merkleization(t, t_b):
-                        return False
-                return True
-            if issubclass(ftyp, StableContainer):
-                if not issubclass(ftyp_base, StableContainer):
-                    return False
-                if ftyp.N != ftyp_base.N:
-                    return False
-                fields = ftyp.fields()
-                fields_base = ftyp_base.fields()
-                if len(fields) != len(fields_base):
-                    return False
-                for (fkey, t), (fkey_b, t_b) in zip(fields.items(), fields_base.items()):
-                    if fkey != fkey_b:
-                        return False
-                    if not has_compatible_merkleization(t, t_b):
-                        return False
-                return True
-            if issubclass(ftyp, Profile):
-                if issubclass(ftyp_base, StableContainer):
-                    return has_compatible_merkleization(ftyp.B, ftyp_base)
-                if not issubclass(ftyp_base, Profile):
-                    return False
-                if not has_compatible_merkleization(ftyp.B, ftyp_base.B):
-                    return False
-                fields = ftyp.fields()
-                fields_base = ftyp_base.fields()
-                if len(fields) != len(fields_base):
-                    return False
-                for (fkey, (t, _)), (fkey_b, (t_b, _)) in zip(fields.items(), fields_base.items()):
-                    if fkey != fkey_b:
-                        return False
-                    if not has_compatible_merkleization(t, t_b):
-                        return False
-                return True
-            return False
 
         class ProfileMeta(ViewMeta):
             def __new__(cls, name, bases, dct):
@@ -527,7 +529,7 @@ class Profile(ComplexView):
 
     @classmethod
     def fields(cls) -> Dict[str, Tuple[Type[View], bool]]:
-        return { fkey: (ftyp, fopt) for fkey, (_, ftyp, fopt) in cls._field_indices.items() }
+        return {fkey: (ftyp, fopt) for fkey, (_, ftyp, fopt) in cls._field_indices.items()}
 
     @classmethod
     def is_fixed_byte_length(cls) -> bool:
@@ -543,7 +545,7 @@ class Profile(ComplexView):
         if cls.is_fixed_byte_length():
             return cls.min_byte_length()
         else:
-            raise Exception(f'Dynamic length `Profile` does not have a fixed byte length')
+            raise Exception('Dynamic length `Profile` does not have a fixed byte length')
 
     @classmethod
     def min_byte_length(cls) -> int:
