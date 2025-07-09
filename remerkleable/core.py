@@ -247,6 +247,18 @@ class BackedView(View):
         if self._hook is not None:
             self._hook(self)
 
+    def check_backing(self):
+        pass
+
+    @classmethod
+    def from_base(cls: Type[BackedV], value) -> BackedV:
+        res = cls(backing=value.get_backing())
+        res.check_backing()
+        return res
+
+    def to_base(self, cls: Type[BackedV]) -> BackedV:
+        return cls(backing=self.get_backing())
+
 
 BV = TypeVar('BV', bound="BasicView")
 

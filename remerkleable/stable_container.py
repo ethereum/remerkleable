@@ -11,7 +11,7 @@ from remerkleable.bitfields import Bitlist, Bitvector
 from remerkleable.byte_arrays import ByteList, ByteVector
 from remerkleable.complex import ComplexView, Container, FieldOffset, List, Vector, \
     decode_offset, encode_offset
-from remerkleable.core import View, ViewHook, ViewMeta, OFFSET_BYTE_LENGTH
+from remerkleable.core import BackedView, View, ViewHook, ViewMeta, OFFSET_BYTE_LENGTH
 from remerkleable.tree import Gindex, NavigationError, Node, PairNode, \
     get_depth, subtree_fill_to_contents, zero_node, \
     RIGHT_GINDEX
@@ -26,7 +26,7 @@ def stable_get(self, findex, ftyp, n):
         return None
     data = self.get_backing().get_left()
     fnode = data.getter(2**get_depth(n) + findex)
-    return ftyp.view_from_backing(fnode)
+    return ftyp.view_from_backing(fnode, lambda v: stable_set(self, findex, ftyp, n, v))
 
 
 def stable_set(self, findex, ftyp, n, value):
@@ -107,7 +107,7 @@ class StableContainer(ComplexView):
             raise TypeError(f'Invalid capacity: `StableContainer[{n}]`')
         if n <= 0:
             raise TypeError(f'Unsupported capacity: `StableContainer[{n}]`')
-        cls.N = n
+        cls.N = int(n)
 
     def __class_getitem__(cls, n: int) -> Type['StableContainer']:
         class StableContainerMeta(ViewMeta):
@@ -141,8 +141,12 @@ class StableContainer(ComplexView):
         return StableContainerView
 
     @classmethod
+    def coerce_view(cls: Type[SV], v: Any) -> SV:
+        return cls(**{fkey: getattr(v, fkey) for fkey in cls.fields().keys()})
+
+    @classmethod
     def fields(cls) -> Dict[str, Type[View]]:
-        return { fkey: ftyp for fkey, (_, ftyp) in cls._field_indices.items() }
+        return {fkey: ftyp for fkey, (_, ftyp) in cls._field_indices.items()}
 
     @classmethod
     def is_fixed_byte_length(cls) -> bool:
@@ -173,9 +177,27 @@ class StableContainer(ComplexView):
     def item_elem_cls(cls, i: int) -> Type[View]:
         return list(cls._field_indices.values())[i]
 
+    @classmethod
+    def default_node(cls) -> Node:
+        return PairNode(
+            left=subtree_fill_to_contents([], cls.tree_depth()),
+            right=Bitvector[cls.N].default_node(),
+        )
+
     def active_fields(self) -> Bitvector:
         active_fields_node = super().get_backing().get_right()
         return Bitvector[self.__class__.N].view_from_backing(active_fields_node)
+
+    def check_backing(self):
+        active_fields = self.active_fields()
+        for fkey, (findex, _) in self.__class__._field_indices.items():
+            if active_fields.get(findex):
+                value = getattr(self, fkey)
+                if isinstance(value, BackedView):
+                    value.check_backing()
+        for findex in range(len(self.__class__._field_indices), self.__class__.N):
+            if active_fields.get(findex):
+                raise ValueError(f'`{self.__class__.__name__}` invalid: Unknown field {findex}')
 
     def __getattribute__(self, item):
         if item == 'N':
@@ -255,6 +277,9 @@ class StableContainer(ComplexView):
                                     f'{foffset}, next {next_offset}, implied size: {fsize}, '
                                     f'size bounds: [{f_min_size}, {f_max_size}]')
                 field_values[fkey] = ftyp.deserialize(stream, fsize)
+        else:
+            if scope != fixed_size:
+                raise Exception(f'Incorrect object size: {scope}, expected: {fixed_size}')
         return cls(**field_values)  # type: ignore
 
     def serialize(self, stream: BinaryIO) -> int:
@@ -306,6 +331,119 @@ class StableContainer(ComplexView):
         return 2**get_depth(cls.N) * 2 + findex
 
 
+def has_compatible_merkleization(ftyp, ftyp_base) -> bool:  # noqa: C901
+    if ftyp == ftyp_base:
+        return True
+    if issubclass(ftyp, boolean):
+        return issubclass(ftyp_base, boolean)
+    if issubclass(ftyp, uint8):
+        return issubclass(ftyp_base, uint8)
+    if issubclass(ftyp, uint16):
+        return issubclass(ftyp_base, uint16)
+    if issubclass(ftyp, uint32):
+        return issubclass(ftyp_base, uint32)
+    if issubclass(ftyp, uint64):
+        return issubclass(ftyp_base, uint64)
+    if issubclass(ftyp, uint128):
+        return issubclass(ftyp_base, uint128)
+    if issubclass(ftyp, uint256):
+        return issubclass(ftyp_base, uint256)
+    if issubclass(ftyp, Bitlist):
+        return (
+            issubclass(ftyp_base, Bitlist)
+            and ftyp.limit() == ftyp_base.limit()
+        )
+    if issubclass(ftyp, Bitvector):
+        return (
+            issubclass(ftyp_base, Bitvector)
+            and ftyp.vector_length() == ftyp_base.vector_length()
+        )
+    if issubclass(ftyp, ByteList):
+        if issubclass(ftyp_base, ByteList):
+            return ftyp.limit() == ftyp_base.limit()
+        return (
+            issubclass(ftyp_base, List)
+            and ftyp.limit() == ftyp_base.limit()
+            and issubclass(ftyp_base.element_cls(), uint8)
+        )
+    if issubclass(ftyp, ByteVector):
+        if issubclass(ftyp_base, ByteVector):
+            return ftyp.vector_length() == ftyp_base.vector_length()
+        return (
+            issubclass(ftyp_base, Vector)
+            and ftyp.vector_length() == ftyp_base.vector_length()
+            and issubclass(ftyp_base.element_cls(), uint8)
+        )
+    if issubclass(ftyp, List):
+        if issubclass(ftyp_base, ByteList):
+            return (
+                ftyp.limit() == ftyp_base.limit()
+                and issubclass(ftyp.element_cls(), uint8)
+            )
+        return (
+            issubclass(ftyp_base, List)
+            and ftyp.limit() == ftyp_base.limit()
+            and has_compatible_merkleization(ftyp.element_cls(), ftyp_base.element_cls())
+        )
+    if issubclass(ftyp, Vector):
+        if issubclass(ftyp_base, ByteVector):
+            return (
+                ftyp.vector_length() == ftyp_base.vector_length()
+                and issubclass(ftyp.element_cls(), uint8)
+            )
+        return (
+            issubclass(ftyp_base, Vector)
+            and ftyp.vector_length() == ftyp_base.vector_length()
+            and has_compatible_merkleization(ftyp.element_cls(), ftyp_base.element_cls())
+        )
+    if issubclass(ftyp, Container):
+        if not issubclass(ftyp_base, Container):
+            return False
+        fields = ftyp.fields()
+        fields_base = ftyp_base.fields()
+        if len(fields) != len(fields_base):
+            return False
+        for (fkey, t), (fkey_b, t_b) in zip(fields.items(), fields_base.items()):
+            if fkey != fkey_b:
+                return False
+            if not has_compatible_merkleization(t, t_b):
+                return False
+        return True
+    if issubclass(ftyp, StableContainer):
+        if not issubclass(ftyp_base, StableContainer):
+            return False
+        if ftyp.N != ftyp_base.N:
+            return False
+        fields = ftyp.fields()
+        fields_base = ftyp_base.fields()
+        if len(fields) != len(fields_base):
+            return False
+        for (fkey, t), (fkey_b, t_b) in zip(fields.items(), fields_base.items()):
+            if fkey != fkey_b:
+                return False
+            if not has_compatible_merkleization(t, t_b):
+                return False
+        return True
+    if issubclass(ftyp, Profile):
+        if issubclass(ftyp_base, StableContainer):
+            return has_compatible_merkleization(ftyp.B, ftyp_base)
+        if not issubclass(ftyp_base, Profile):
+            return False
+        if not has_compatible_merkleization(ftyp.B, ftyp_base.B):
+            return False
+        fields = ftyp.fields()
+        fields_base = ftyp_base.fields()
+        if len(fields) != len(fields_base):
+            return False
+        for (fkey, (t, _)), (fkey_b, (t_b, _)) in zip(fields.items(), fields_base.items()):
+            if fkey != fkey_b:
+                return False
+            if not has_compatible_merkleization(t, t_b):
+                return False
+        return True
+    return False
+
+
 class Profile(ComplexView):
     __slots__ = '_field_indices', '_o', 'B'
     _field_indices: Dict[str, Tuple[int, Type[View], bool]]
@@ -319,11 +457,11 @@ class Profile(ComplexView):
             return super().__new__(cls, backing=backing, hook=hook, **kwargs)
 
         extra_kw = kwargs.copy()
-        for fkey, (_, _, fopt) in cls._field_indices.items():
+        for fkey, (_, ftyp, fopt) in cls._field_indices.items():
             if fkey in extra_kw:
                 extra_kw.pop(fkey)
             elif not fopt:
-                raise AttributeError(f'Field `{fkey}` is required in {cls.__name__}')
+                kwargs[fkey] = ftyp.view_from_backing(ftyp.default_node())
             else:
                 pass
         if len(extra_kw) > 0:
@@ -341,117 +479,6 @@ class Profile(ComplexView):
         cls.B = b
 
     def __class_getitem__(cls, b) -> Type['Profile']:
-        def has_compatible_merkleization(ftyp, ftyp_base) -> bool:
-            if ftyp == ftyp_base:
-                return True
-            if issubclass(ftyp, boolean):
-                return issubclass(ftyp_base, boolean)
-            if issubclass(ftyp, uint8):
-                return issubclass(ftyp_base, uint8)
-            if issubclass(ftyp, uint16):
-                return issubclass(ftyp_base, uint16)
-            if issubclass(ftyp, uint32):
-                return issubclass(ftyp_base, uint32)
-            if issubclass(ftyp, uint64):
-                return issubclass(ftyp_base, uint64)
-            if issubclass(ftyp, uint128):
-                return issubclass(ftyp_base, uint128)
-            if issubclass(ftyp, uint256):
-                return issubclass(ftyp_base, uint256)
-            if issubclass(ftyp, Bitlist):
-                return (
-                    issubclass(ftyp_base, Bitlist)
-                    and ftyp.limit() == ftyp_base.limit()
-                )
-            if issubclass(ftyp, Bitvector):
-                return (
-                    issubclass(ftyp_base, Bitvector)
-                    and ftyp.vector_length() == ftyp_base.vector_length()
-                )
-            if issubclass(ftyp, ByteList):
-                if issubclass(ftyp_base, ByteList):
-                    return ftyp.limit() == ftyp_base.limit()
-                return (
-                    issubclass(ftyp_base, List)
-                    and ftyp.limit() == ftyp_base.limit()
-                    and issubclass(ftyp_base.element_cls(), uint8)
-                )
-            if issubclass(ftyp, ByteVector):
-                if issubclass(ftyp_base, ByteVector):
-                    return ftyp.vector_length() == ftyp_base.vector_length()
-                return (
-                    issubclass(ftyp_base, Vector)
-                    and ftyp.vector_length() == ftyp_base.vector_length()
-                    and issubclass(ftyp_base.element_cls(), uint8)
-                )
-            if issubclass(ftyp, List):
-                if issubclass(ftyp_base, ByteList):
-                    return (
-                        ftyp.limit() == ftyp_base.limit()
-                        and issubclass(ftyp.element_cls(), uint8)
-                    )
-                return (
-                    issubclass(ftyp_base, List)
-                    and ftyp.limit() == ftyp_base.limit()
-                    and has_compatible_merkleization(ftyp.element_cls(), ftyp_base.element_cls())
-                )
-            if issubclass(ftyp, Vector):
-                if issubclass(ftyp_base, ByteVector):
-                    return (
-                        ftyp.vector_length() == ftyp_base.vector_length()
-                        and issubclass(ftyp.element_cls(), uint8)
-                    )
-                return (
-                    issubclass(ftyp_base, Vector)
-                    and ftyp.vector_length() == ftyp_base.vector_length()
-                    and has_compatible_merkleization(ftyp.element_cls(), ftyp_base.element_cls())
-                )
-            if issubclass(ftyp, Container):
-                if not issubclass(ftyp_base, Container):
-                    return False
-                fields = ftyp.fields()
-                fields_base = ftyp_base.fields()
-                if len(fields) != len(fields_base):
-                    return False
-                for (fkey, t), (fkey_b, t_b) in zip(fields.items(), fields_base.items()):
-                    if fkey != fkey_b:
-                        return False
-                    if not has_compatible_merkleization(t, t_b):
-                        return False
-                return True
-            if issubclass(ftyp, StableContainer):
-                if not issubclass(ftyp_base, StableContainer):
-                    return False
-                if ftyp.N != ftyp_base.N:
-                    return False
-                fields = ftyp.fields()
-                fields_base = ftyp_base.fields()
-                if len(fields) != len(fields_base):
-                    return False
-                for (fkey, t), (fkey_b, t_b) in zip(fields.items(), fields_base.items()):
-                    if fkey != fkey_b:
-                        return False
-                    if not has_compatible_merkleization(t, t_b):
-                        return False
-                return True
-            if issubclass(ftyp, Profile):
-                if issubclass(ftyp_base, StableContainer):
-                    return has_compatible_merkleization(ftyp.B, ftyp_base)
-                if not issubclass(ftyp_base, Profile):
-                    return False
-                if not has_compatible_merkleization(ftyp.B, ftyp_base.B):
-                    return False
-                fields = ftyp.fields()
-                fields_base = ftyp_base.fields()
-                if len(fields) != len(fields_base):
-                    return False
-                for (fkey, (t, _)), (fkey_b, (t_b, _)) in zip(fields.items(), fields_base.items()):
-                    if fkey != fkey_b:
-                        return False
-                    if not has_compatible_merkleization(t, t_b):
-                        return False
-                return True
-            return False
 
         class ProfileMeta(ViewMeta):
             def __new__(cls, name, bases, dct):
@@ -497,8 +524,12 @@ class Profile(ComplexView):
         return ProfileView
 
     @classmethod
+    def coerce_view(cls: Type[BV], v: Any) -> BV:
+        return cls(**{fkey: getattr(v, fkey) for fkey in cls.fields().keys()})
+
+    @classmethod
     def fields(cls) -> Dict[str, Tuple[Type[View], bool]]:
-        return { fkey: (ftyp, fopt) for fkey, (_, ftyp, fopt) in cls._field_indices.items() }
+        return {fkey: (ftyp, fopt) for fkey, (_, ftyp, fopt) in cls._field_indices.items()}
 
     @classmethod
     def is_fixed_byte_length(cls) -> bool:
@@ -514,7 +545,7 @@ class Profile(ComplexView):
         if cls.is_fixed_byte_length():
             return cls.min_byte_length()
         else:
-            raise Exception(f'Dynamic length `Profile` does not have a fixed byte length')
+            raise Exception('Dynamic length `Profile` does not have a fixed byte length')
 
     @classmethod
     def min_byte_length(cls) -> int:
@@ -548,6 +579,19 @@ class Profile(ComplexView):
     def item_elem_cls(cls, i: int) -> Type[View]:
         return cls.B.item_elem_cls(i)
 
+    @classmethod
+    def default_node(cls) -> Node:
+        fnodes = [zero_node(0)] * cls.B.N
+        active_fields = Bitvector[cls.B.N]()
+        for (findex, ftyp, fopt) in cls._field_indices.values():
+            if not fopt:
+                fnodes[findex] = ftyp.default_node()
+                active_fields.set(findex, True)
+        return PairNode(
+            left=subtree_fill_to_contents(fnodes, cls.tree_depth()),
+            right=active_fields.get_backing(),
+        )
+
     def active_fields(self) -> Bitvector:
         active_fields_node = super().get_backing().get_right()
         return Bitvector[self.__class__.B.N].view_from_backing(active_fields_node)
@@ -563,6 +607,24 @@ class Profile(ComplexView):
                 optional_fields.set(oindex, active_fields.get(findex))
                 oindex += 1
         return optional_fields
+
+    def check_backing(self):
+        active_fields = self.active_fields()
+        for fkey, (findex, _) in self.__class__.B._field_indices.items():
+            if fkey not in self.__class__._field_indices:
+                if active_fields.get(findex):
+                    raise ValueError(f'`{self.__class__.__name__}` invalid: {fkey} unsupported')
+            elif active_fields.get(findex):
+                value = getattr(self, fkey)
+                if isinstance(value, BackedView):
+                    value.check_backing()
+            else:
+                (_, _, fopt) = self.__class__._field_indices[fkey]
+                if not fopt:
+                    raise ValueError(f'`{self.__class__.__name__}` invalid: {fkey} is required')
+        for findex in range(len(self.__class__.B._field_indices), self.__class__.B.N):
+            if active_fields.get(findex):
+                raise ValueError(f'`{self.__class__.__name__}` invalid: Unknown field {findex}')
 
     def __getattribute__(self, item):
         if item == 'B':
@@ -649,6 +711,9 @@ class Profile(ComplexView):
                                     f'{foffset}, next {next_offset}, implied size: {fsize}, '
                                     f'size bounds: [{f_min_size}, {f_max_size}]')
                 field_values[fkey] = ftyp.deserialize(stream, fsize)
+        else:
+            if scope != fixed_size:
+                raise Exception(f'Incorrect object size: {scope}, expected: {fixed_size}')
         return cls(**field_values)  # type: ignore
 
     def serialize(self, stream: BinaryIO) -> int:

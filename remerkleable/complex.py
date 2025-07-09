@@ -5,7 +5,8 @@ from textwrap import indent
 from collections.abc import Sequence as ColSequence
 from itertools import chain
 import io
-from remerkleable.core import View, BasicView, OFFSET_BYTE_LENGTH, ViewHook, ObjType, ObjParseException
+from remerkleable.core import View, BackedView, BasicView, OFFSET_BYTE_LENGTH,\
+    ViewHook, ObjType, ObjParseException
 from remerkleable.basic import uint256, uint8, uint32
 from remerkleable.tree import Node, subtree_fill_to_length, subtree_fill_to_contents,\
     zero_node, Gindex, PairNode, to_gindex, NavigationError, get_depth, RIGHT_GINDEX
@@ -106,6 +107,11 @@ class MonoSubtreeView(ColSequence, ComplexView):
                 return ComplexFreshElemIter(backing, tree_depth, length, cast(Type[View], elem_type))
             else:
                 return ComplexElemIter(backing, tree_depth, length, elem_type)
+
+    def check_backing(self):
+        for el in self:
+            if isinstance(el, BackedView):
+                el.check_backing()
 
     @classmethod
     def deserialize(cls: Type[M], stream: BinaryIO, scope: int) -> M:
@@ -713,6 +719,11 @@ class _ContainerBase(ComplexView):
     @classmethod
     def fields(cls) -> Fields:  # base condition for the subclasses deriving the fields
         return {}
+
+    def check_backing(self):
+        for el in self:
+            if isinstance(el, BackedView):
+                el.check_backing()
 
 
 class Container(_ContainerBase):
