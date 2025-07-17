@@ -12,7 +12,7 @@ from remerkleable.byte_arrays import ByteList, ByteVector
 from remerkleable.complex import ComplexView, Container, FieldOffset, List, Vector, \
     decode_offset, encode_offset
 from remerkleable.core import BackedView, View, ViewHook, ViewMeta, OFFSET_BYTE_LENGTH
-from remerkleable.progressive import ProgressiveList
+from remerkleable.progressive import ProgressiveBitlist, ProgressiveList
 from remerkleable.tree import Gindex, NavigationError, Node, PairNode, \
     get_depth, subtree_fill_to_contents, zero_node, \
     RIGHT_GINDEX
@@ -359,6 +359,8 @@ def has_compatible_merkleization(ftyp, ftyp_base) -> bool:  # noqa: C901
             issubclass(ftyp_base, Bitvector)
             and ftyp.vector_length() == ftyp_base.vector_length()
         )
+    if issubclass(ftyp, ProgressiveBitlist):
+        return issubclass(ftyp_base, ProgressiveBitlist)
     if issubclass(ftyp, ByteList):
         if issubclass(ftyp_base, ByteList):
             return ftyp.limit() == ftyp_base.limit()
