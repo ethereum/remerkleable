@@ -2,12 +2,16 @@
 # The EIP is still under review, functionality may change or go away without deprecation.
 
 from itertools import chain
-from typing import List as PyList, Optional, Tuple, Type, cast
+from typing import BinaryIO, Iterator, List as PyList, Optional, Tuple, Type, TypeVar, cast
 from types import GeneratorType
-from remerkleable.basic import uint8, uint256
-from remerkleable.core import BasicView, ObjType, View, ViewHook, OFFSET_BYTE_LENGTH
+from remerkleable.basic import boolean, uint8, uint256
+from remerkleable.bitfields import BitsView, append_bit, deserialize_bits, pop_bit, serialize_bits
+from remerkleable.core import BasicView, ObjType, View, ViewHook, OFFSET_BYTE_LENGTH, pack_bits_to_chunks
 from remerkleable.complex import MonoSubtreeView, create_readonly_iter, append_view, pop_and_summarize
+from remerkleable.readonly_iters import BitfieldIter
 from remerkleable.tree import Gindex, Node, PairNode, subtree_fill_to_contents, zero_node
+
+V = TypeVar('V', bound=View)
 
 
 def subtree_fill_progressive(nodes: PyList[Node], depth=0) -> Node:
@@ -54,13 +58,8 @@ def to_gindex_progressive(chunk_i: int) -> Tuple[Gindex, int, int]:
         gindex <<= 1
 
 
-def to_target_progressive(elem_type: Type[View], is_packed: bool, i: int) -> Tuple[Gindex, int, int]:
-    if is_packed:
-        elems_per_chunk = 32 // elem_type.type_byte_length()
-        chunk_i, offset_i = divmod(i, elems_per_chunk)
-    else:
-        elems_per_chunk = 1
-        chunk_i, offset_i = i, 0
+def to_target_progressive(i: int, elems_per_chunk: int = 1) -> Tuple[Gindex, int, int]:
+    chunk_i, offset_i = divmod(i, elems_per_chunk)
 
     _, depth, chunk_i = to_gindex_progressive(chunk_i)
     i = chunk_i * elems_per_chunk + offset_i
@@ -72,6 +71,13 @@ def to_target_progressive(elem_type: Type[View], is_packed: bool, i: int) -> Tup
         d += 2
 
     return target, d, i
+
+
+def to_target_progressive_elem(elem_type: Type[View], is_packed: bool, i: int) -> Tuple[Gindex, int, int]:
+    if is_packed:
+        return to_target_progressive(i, 32 // elem_type.type_byte_length())
+    else:
+        return to_target_progressive(i)
 
 
 class ProgressiveList(MonoSubtreeView):
@@ -155,7 +161,7 @@ class ProgressiveList(MonoSubtreeView):
 
         elem_type = self.__class__.element_cls()
         is_packed = self.__class__.is_packed()
-        gindex, d, i = to_target_progressive(elem_type, is_packed, i)
+        gindex, d, i = to_target_progressive_elem(elem_type, is_packed, i)
 
         if not isinstance(v, elem_type):
             v = elem_type.coerce_view(v)
@@ -182,7 +188,7 @@ class ProgressiveList(MonoSubtreeView):
 
         elem_type = self.__class__.element_cls()
         is_packed = self.__class__.is_packed()
-        gindex, d, i = to_target_progressive(elem_type, is_packed, i)
+        gindex, d, i = to_target_progressive_elem(elem_type, is_packed, i)
 
         next_backing = self.get_backing()
         if i == 0:  # Delete entire subtree
@@ -225,3 +231,143 @@ class ProgressiveList(MonoSubtreeView):
 
     def to_obj(self) -> ObjType:
         return list(el.to_obj() for el in self.readonly_iter())
+
+
+def iter_progressive_bitlist(backing: Node, bitlen: int) -> Iterator[Tuple[Node, int, int, bool]]:
+    if bitlen == 0:
+        assert uint256.view_from_backing(backing) == uint256(0)
+        yield from []
+        return
+
+    tree_depth = 0
+    while True:
+        base_bits = 256 << tree_depth
+        is_final_chunk = bitlen <= base_bits
+        yield backing.get_right(), tree_depth, min(bitlen, base_bits), is_final_chunk
+        if is_final_chunk:
+            return
+        backing = backing.get_left()
+        bitlen -= base_bits
+        tree_depth += 2
+
+
+def to_target_progressive_bitlist(i: int) -> Tuple[Gindex, int, int]:
+    return to_target_progressive(i, elems_per_chunk=256)
+
+
+class ProgressiveBitlist(BitsView):
+    __slots__ = ()
+
+    def __new__(cls, *args, **kwargs):
+        vals = list(args)
+        if len(vals) > 0:
+            if len(vals) == 1 and isinstance(vals[0], (GeneratorType, list, tuple)):
+                vals = list(vals[0])
+            input_bits = list(map(bool, vals))
+            input_nodes = pack_bits_to_chunks(input_bits)
+            contents = subtree_fill_progressive(input_nodes)
+            kwargs['backing'] = PairNode(contents, uint256(len(input_bits)).get_backing())
+        return super().__new__(cls, **kwargs)
+
+    def __iter__(self):
+        bitlen = self.length()
+        if bitlen == 0:
+            yield from []
+            return
+
+        for backing, tree_depth, chunk_bitlen, _ in iter_progressive_bitlist(
+            self.get_backing().get_left(), bitlen
+        ):
+            yield from BitfieldIter(backing, tree_depth, chunk_bitlen)
+
+    @classmethod
+    def default_node(cls) -> Node:
+        return PairNode(zero_node(0), zero_node(0))  # mix-in 0 as list length
+
+    @classmethod
+    def type_repr(cls) -> str:
+        return f"ProgressiveBitlist"
+
+    @classmethod
+    def min_byte_length(cls) -> int:
+        return 1  # the delimiting bit will always require at least 1 byte
+
+    @classmethod
+    def max_byte_length(cls) -> int:
+        return 1 << 32  # Essentially unbounded, limited by offsets if nested
+
+    def length(self) -> int:
+        return int(uint256.view_from_backing(self.get_backing().get_right()))
+
+    def append(self, v: boolean):
+        ll = self.length()
+        i = ll
+
+        gindex, d, i = to_target_progressive_bitlist(i)
+
+        next_backing = self.get_backing()
+        if i == 0:  # Create new subtree
+            next_backing = next_backing.setter(gindex)(PairNode(zero_node(0), zero_node(d)))
+        gindex = (gindex << 1) + 1
+        next_backing = next_backing.setter(gindex)(append_bit(
+            next_backing.getter(gindex), d, i, v))
+
+        next_backing = next_backing.setter(3)(uint256(ll + 1).get_backing())
+        self.set_backing(next_backing)
+
+    def pop(self):
+        ll = self.length()
+        if ll == 0:
+            raise Exception('progressive bitlist is empty, cannot pop')
+        i = ll - 1
+
+        if i == 0:
+            self.set_backing(PairNode(zero_node(0), zero_node(0)))
+            return
+
+        gindex, d, i = to_target_progressive_bitlist(i)
+
+        next_backing = self.get_backing()
+        if i == 0:  # Delete entire subtree
+            next_backing = next_backing.setter(gindex)(zero_node(0))
+        else:
+            gindex = (gindex << 1) + 1
+            next_backing = next_backing.setter(gindex)(pop_bit(
+                next_backing.getter(gindex), d, i))
+
+        next_backing = next_backing.setter(3)(uint256(ll - 1).get_backing())
+        self.set_backing(next_backing)
+
+    def value_byte_length(self) -> int:
+        # bit count in bytes rounded up + delimiting bit
+        return (self.length() + 7 + 1) // 8
+
+    @classmethod
+    def chunk_to_gindex(cls, chunk_i: int) -> Gindex:
+        gindex, _, _ = to_gindex_progressive(chunk_i)
+        return gindex
+
+    @classmethod
+    def deserialize(cls: Type[V], stream: BinaryIO, scope: int) -> V:
+        if scope < 1:
+            raise Exception('cannot have empty scope for progressive bitlist, need at least a delimiting bit')
+        chunks, bitlen = deserialize_bits(stream, scope, with_delimiting_bit=True)
+        contents = subtree_fill_progressive(chunks)
+        backing = PairNode(contents, uint256(bitlen).get_backing())
+        return cls.view_from_backing(backing)
+
+    def serialize(self, stream: BinaryIO) -> int:
+        bitlen = self.length()
+        if bitlen == 0:
+            stream.write(b'\x01')  # empty bitlist still has a delimiting bit
+            return 1
+
+        byte_len = 0
+        for backing, tree_depth, chunk_bitlen, is_final_chunk in iter_progressive_bitlist(
+            self.get_backing().get_left(), bitlen
+        ):
+            byte_len += serialize_bits(
+                backing, tree_depth, chunk_bitlen, stream,
+                with_delimiting_bit=is_final_chunk,
+            )
+        return byte_len

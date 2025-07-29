@@ -1,4 +1,4 @@
-from typing import cast, BinaryIO, List as PyList, Any, TypeVar, Type
+from typing import cast, BinaryIO, List as PyList, Any, Tuple, TypeVar, Type
 from types import GeneratorType
 from collections.abc import Sequence as ColSequence
 import io
@@ -21,6 +21,102 @@ def _new_chunk_with_bit(chunk: Node, i: int, v: boolean) -> Node:
     return RootNode(Root(new_chunk_root))
 
 
+def deserialize_bits(stream: BinaryIO, scope: int, with_delimiting_bit: bool = False) -> Tuple[PyList[Node], int]:
+    chunks: PyList[Node] = []
+    bytelen = scope - 1  # excluding the last byte (which contains the delimiting bit)
+    while scope > 32:
+        chunks.append(RootNode(Root(stream.read(32))))
+        scope -= 32
+    # scope is [1, 32] here
+    last_chunk_part = stream.read(scope)
+    last_byte = int(last_chunk_part[scope-1])
+    if with_delimiting_bit:
+        if last_byte == 0:
+            raise Exception("last byte must not be 0: bitlist requires delimiting bit")
+        last_byte_bitlen = last_byte.bit_length() - 1  # excluding the delimiting bit
+        bitlen = bytelen * 8 + last_byte_bitlen
+        if bitlen % 256 != 0:
+            last_chunk = last_chunk_part[:scope-1] +\
+                            (last_byte ^ (1 << last_byte_bitlen)).to_bytes(length=1, byteorder='little')
+            last_chunk += b"\x00" * (32 - len(last_chunk))
+            chunks.append(RootNode(Root(last_chunk)))
+    else:
+        bitlen = bytelen * 8 + last_byte.bit_length()
+        last_chunk = last_chunk_part + (b"\x00" * (32 - len(last_chunk_part)))
+        chunks.append(RootNode(Root(last_chunk)))
+    return chunks, bitlen
+
+
+def serialize_bits(backing: Node, tree_depth: int, bitlen: int, stream: BinaryIO, with_delimiting_bit: bool = False) -> int:
+    if bitlen == 0:
+        if with_delimiting_bit:
+            stream.write(b"\x01")  # empty bitlist still has a delimiting bit
+            return 1
+        return 0
+
+    chunk_count = (bitlen + 255) // 256  # excludes delimit bit, this is the backing, not the serialized form
+    byte_len = (bitlen + 7) // 8
+    full_chunks_count = max(0, chunk_count - 1)
+    for chunk_index in range(full_chunks_count):
+        chunk = backing.getter(to_gindex(chunk_index, tree_depth))
+        stream.write(chunk.root)
+
+    last_chunk = backing.getter(to_gindex(chunk_count - 1, tree_depth))
+    # write the last chunk, may not be a full chunk
+    last_chunk_bytes_count = byte_len - (full_chunks_count * 32)
+    bytez = last_chunk.root[:last_chunk_bytes_count]
+    if not with_delimiting_bit:
+        stream.write(bytez)
+        return byte_len
+
+    # add in delimiting bit
+    if bitlen % 8 == 0:
+        bytez += b"\x01"
+    else:
+        bytez = bytez[:len(bytez) - 1] +\
+                (bytez[len(bytez) - 1] ^ (1 << (bitlen % 8))).to_bytes(length=1, byteorder='little')
+    stream.write(bytez)
+    return (bitlen + 7 + 1) // 8  # includes delimit bit in length computation
+
+
+def append_bit(backing: Node, tree_depth: int, i: int, v: boolean) -> Node:
+    chunk_i = i // 256
+    target: Gindex = to_gindex(chunk_i, tree_depth)
+    if i & 0xff == 0:
+        set_last = backing.setter(target, expand=True)
+        next_backing = set_last(_new_chunk_with_bit(zero_node(0), 0, v))
+    else:
+        set_last = backing.setter(target)
+        chunk = backing.getter(target)
+        next_backing = set_last(_new_chunk_with_bit(chunk, i & 0xff, v))
+
+    return next_backing
+
+
+def pop_bit(backing: Node, tree_depth: int, i: int) -> Node:
+    chunk_i = i // 256
+    target: Gindex = to_gindex(chunk_i, tree_depth)
+    if i & 0xff == 0:
+        set_last = backing.setter(target)
+        next_backing = set_last(zero_node(0))
+    else:
+        set_last = backing.setter(target)
+        chunk = backing.getter(target)
+        next_backing = set_last(_new_chunk_with_bit(chunk, (i + 1) & 0xff, boolean(False)))
+
+    # if possible, summarize
+    can_summarize = (target & 1) == 0
+    if can_summarize:
+        # summarize to the highest node possible.
+        # I.e. the resulting target must be a right-hand, unless it's the only content node.
+        while (target & 1) == 0 and target != 0b10:
+            target >>= 1
+        summary_fn = next_backing.summarize_into(target)
+        next_backing = summary_fn()
+
+    return next_backing
+
+
 # alike to the SubtreeView, but specialized to work on individual bits of chunks, instead of complex/basic types.
 class BitsView(BackedView, ColSequence):
     __slots__ = ()
@@ -36,13 +132,17 @@ class BitsView(BackedView, ColSequence):
     def length(self) -> int:
         raise NotImplementedError
 
+    @classmethod
+    def chunk_to_gindex(cls, chunk_i: int) -> Gindex:
+        return to_gindex(chunk_i, cls.tree_depth())
+
     def get(self, i: int) -> boolean:
         ll = self.length()
         i = int(i)  # coerce to int, access type can have stricter bit operation typing than necessary.
         if i >= ll:
             raise NavigationError(f"cannot get bit {i} in bits of length {ll}")
         chunk_i = i >> 8
-        chunk = self.get_backing().getter(to_gindex(chunk_i, self.__class__.tree_depth()))
+        chunk = self.get_backing().getter(self.chunk_to_gindex(chunk_i))
         chunk_byte = chunk.root[(i & 0xff) >> 3]
         return boolean((chunk_byte >> (i & 0x7)) & 1)
 
@@ -52,8 +152,8 @@ class BitsView(BackedView, ColSequence):
         if i >= ll:
             raise NavigationError(f"cannot set bit {i} in bits of length {ll}")
         chunk_i = i >> 8
-        chunk_setter_link: Link = self.get_backing().setter(to_gindex(chunk_i, self.__class__.tree_depth()))
-        chunk = self.get_backing().getter(to_gindex(chunk_i, self.__class__.tree_depth()))
+        chunk_setter_link: Link = self.get_backing().setter(self.chunk_to_gindex(chunk_i))
+        chunk = self.get_backing().getter(self.chunk_to_gindex(chunk_i))
         new_chunk = _new_chunk_with_bit(chunk, i & 0xff, v)
         self.set_backing(chunk_setter_link(new_chunk))
 
@@ -187,15 +287,10 @@ class Bitlist(BitsView):
         if ll >= self.__class__.limit():
             raise Exception("list is maximum capacity, cannot append")
         i = ll
-        chunk_i = i // 256
-        target: Gindex = to_gindex(chunk_i, self.__class__.tree_depth())
-        if i & 0xff == 0:
-            set_last = self.get_backing().setter(target, expand=True)
-            next_backing = set_last(_new_chunk_with_bit(zero_node(0), 0, v))
-        else:
-            set_last = self.get_backing().setter(target)
-            chunk = self.get_backing().getter(target)
-            next_backing = set_last(_new_chunk_with_bit(chunk, i & 0xff, v))
+
+        tree_depth = self.__class__.tree_depth()
+        next_backing = append_bit(self.get_backing(), tree_depth, i, v)
+
         set_length = next_backing.rebind_right
         new_length = uint256(ll + 1).get_backing()
         next_backing = set_length(new_length)
@@ -206,25 +301,9 @@ class Bitlist(BitsView):
         if ll == 0:
             raise Exception("list is empty, cannot pop")
         i = ll - 1
-        chunk_i = i // 256
-        target: Gindex = to_gindex(chunk_i, self.__class__.tree_depth())
-        if i & 0xff == 0:
-            set_last = self.get_backing().setter(target)
-            next_backing = set_last(zero_node(0))
-        else:
-            set_last = self.get_backing().setter(target)
-            chunk = self.get_backing().getter(target)
-            next_backing = set_last(_new_chunk_with_bit(chunk, ll & 0xff, boolean(False)))
 
-        # if possible, summarize
-        can_summarize = (target & 1) == 0
-        if can_summarize:
-            # summarize to the highest node possible.
-            # I.e. the resulting target must be a right-hand, unless it's the only content node.
-            while (target & 1) == 0 and target != 0b10:
-                target >>= 1
-            summary_fn = next_backing.summarize_into(target)
-            next_backing = summary_fn()
+        tree_depth = self.__class__.tree_depth()
+        next_backing = pop_bit(self.get_backing(), tree_depth, i)
 
         set_length = next_backing.rebind_right
         new_length = uint256(ll - 1).get_backing()
@@ -275,23 +354,7 @@ class Bitlist(BitsView):
             raise Exception("cannot have empty scope for bitlist, need at least a delimiting bit")
         if scope > cls.max_byte_length():
             raise Exception(f"scope is too large: {scope}, max bitlist byte length is: {cls.max_byte_length()}")
-        chunks: PyList[Node] = []
-        bytelen = scope - 1  # excluding the last byte (which contains the delimiting bit)
-        while scope > 32:
-            chunks.append(RootNode(Root(stream.read(32))))
-            scope -= 32
-        # scope is [1, 32] here
-        last_chunk_part = stream.read(scope)
-        last_byte = int(last_chunk_part[scope-1])
-        if last_byte == 0:
-            raise Exception("last byte must not be 0: bitlist requires delimiting bit")
-        last_byte_bitlen = last_byte.bit_length() - 1  # excluding the delimiting bit
-        bitlen = bytelen * 8 + last_byte_bitlen
-        if bitlen % 256 != 0:
-            last_chunk = last_chunk_part[:scope-1] +\
-                         (last_byte ^ (1 << last_byte_bitlen)).to_bytes(length=1, byteorder='little')
-            last_chunk += b"\x00" * (32 - len(last_chunk))
-            chunks.append(RootNode(Root(last_chunk)))
+        chunks, bitlen = deserialize_bits(stream, scope, with_delimiting_bit=True)
         if bitlen > cls.limit():
             raise Exception(f"bitlist too long: {bitlen}, delimiting bit is over limit ({cls.limit()})")
         contents = subtree_fill_to_contents(chunks, cls.contents_depth())
@@ -299,30 +362,9 @@ class Bitlist(BitsView):
         return cls.view_from_backing(backing)
 
     def serialize(self, stream: BinaryIO) -> int:
-        backing = self.get_backing()
         bitlen = self.length()
-        chunk_count = (bitlen + 255) // 256  # excludes delimit bit, this is the backing, not the serialized form
-        byte_len = (bitlen + 7) // 8
-        tree_depth = self.tree_depth()
-        full_chunks_count = max(0, chunk_count - 1)
-        for chunk_index in range(full_chunks_count):
-            chunk = backing.getter(to_gindex(chunk_index, tree_depth))
-            stream.write(chunk.root)
-        if chunk_count > 0:
-            last_chunk = backing.getter(to_gindex(chunk_count - 1, tree_depth))
-            # write the last chunk, may not be a full chunk
-            last_chunk_bytes_count = byte_len - (full_chunks_count * 32)
-            bytez = last_chunk.root[:last_chunk_bytes_count]
-            # add in delimiting bit
-            if bitlen % 8 == 0:
-                bytez += b"\x01"
-            else:
-                bytez = bytez[:len(bytez) - 1] +\
-                        (bytez[len(bytez) - 1] ^ (1 << (bitlen % 8))).to_bytes(length=1, byteorder='little')
-            stream.write(bytez)
-        else:
-            stream.write(b"\x01")  # empty bitlist still has a delimiting bit
-        return (bitlen + 7 + 1) // 8  # includes delimit bit in length computation
+        tree_depth = self.__class__.tree_depth()
+        return serialize_bits(self.get_backing(), tree_depth, bitlen, stream, with_delimiting_bit=True)
 
     @classmethod
     def navigate_type(cls, key: Any) -> Type[View]:
@@ -418,38 +460,16 @@ class Bitvector(BitsView, FixedByteLengthViewHelper):
     def deserialize(cls: Type[V], stream: BinaryIO, scope: int) -> V:
         if scope != cls.type_byte_length():
             raise Exception(f"scope is invalid: {scope}, bitvector byte length is: {cls.type_byte_length()}")
-        chunks: PyList[Node] = []
-        bytelen = scope - 1  # excluding the last byte
-        while scope > 32:
-            chunks.append(RootNode(Root(stream.read(32))))
-            scope -= 32
-        # scope is [1, 32] here
-        last_chunk_part = stream.read(scope)
-        last_byte = int(last_chunk_part[scope-1])
-        bitlen = bytelen * 8 + last_byte.bit_length()
+        chunks, bitlen = deserialize_bits(stream, scope)
         if bitlen > cls.vector_length():
             raise Exception(f"bitvector too long: {bitlen}, last byte has bits over bit length ({cls.vector_length()})")
-        last_chunk = last_chunk_part + (b"\x00" * (32 - len(last_chunk_part)))
-        chunks.append(RootNode(Root(last_chunk)))
         backing = subtree_fill_to_contents(chunks, cls.tree_depth())
         return cls.view_from_backing(backing)
 
     def serialize(self, stream: BinaryIO) -> int:
-        backing = self.get_backing()
         bitlen = self.length()
-        chunk_count = (bitlen + 255) // 256  # excludes delimit bit, this is the backing, not the serialized form
-        byte_len = (bitlen + 7) // 8
-        tree_depth = self.tree_depth()
-        full_chunks_count = max(0, chunk_count - 1)
-        for chunk_index in range(full_chunks_count):
-            chunk: Node = backing.getter(to_gindex(chunk_index, tree_depth))
-            stream.write(chunk.root)
-        if chunk_count > 0:
-            last_chunk = backing.getter(to_gindex(chunk_count - 1, tree_depth))
-            # write the last chunk, may not be a full chunk
-            last_chunk_bytes_count = byte_len - (full_chunks_count * 32)
-            stream.write(last_chunk.root[:last_chunk_bytes_count])
-        return byte_len
+        tree_depth = self.__class__.tree_depth()
+        return serialize_bits(self.get_backing(), tree_depth, bitlen, stream)
 
     @classmethod
     def navigate_type(cls, key: Any) -> Type[View]:

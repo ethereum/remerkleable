@@ -11,7 +11,7 @@ from remerkleable.basic import boolean, bit, uint, byte, uint8, uint16, uint32, 
 from remerkleable.bitfields import Bitvector, Bitlist
 from remerkleable.byte_arrays import ByteVector, Bytes1, Bytes4, Bytes8, Bytes32, Bytes48, Bytes96
 from remerkleable.core import BasicView, View
-from remerkleable.progressive import ProgressiveList
+from remerkleable.progressive import ProgressiveBitlist, ProgressiveList
 from remerkleable.stable_container import Profile, StableContainer
 from remerkleable.union import Union
 from remerkleable.tree import get_depth, merkle_hash, LEFT_GINDEX, RIGHT_GINDEX
@@ -481,7 +481,7 @@ def test_paths():
 
 
 def test_bitvector():
-    for size in [1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 511, 512, 513, 1023, 1024, 1025]:
+    for size in [1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 255, 256, 257, 511, 512, 513, 1023, 1024, 1025]:
         for i in range(size):
             b = Bitvector[size]()
             b[i] = True
@@ -495,7 +495,7 @@ def test_bitvector():
 
 def test_bitvector_iter():
     rng = Random(123)
-    for size in [1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 511, 512, 513, 1023, 1024, 1025]:
+    for size in [1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 255, 256, 257, 511, 512, 513, 1023, 1024, 1025]:
         # get a somewhat random bitvector
         bools = list(rng.randint(0, 1) == 1 for i in range(size))
         b = Bitvector[size](*bools)
@@ -505,32 +505,41 @@ def test_bitvector_iter():
 
 
 def test_bitlist():
-    for size in [1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 511, 512, 513, 1023, 1024, 1025]:
+    def run_test(typ: Type[View], size: int):
         for i in range(size):
-            b = Bitlist[size](False for i in range(size))
+            b = typ(False for i in range(size))
             b[i] = True
             assert bool(b[i]) == True, "set %d / %d" % (i, size)
 
         for i in range(size):
-            b = Bitlist[size](True for i in range(size))
+            b = typ(True for i in range(size))
             b[i] = False
             assert bool(b[i]) == False, "unset %d / %d" % (i, size)
 
+    for size in [1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 255, 256, 257, 511, 512, 513, 1023, 1024, 1025]:
+        run_test(Bitlist[size], size)
+        run_test(ProgressiveBitlist, size)
+
 
 def test_bitlist_iter():
-    rng = Random(123)
-    for limit in [1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 511, 512, 513, 1023, 1024, 1025]:
+    def run_test(typ: Type[View], limit: int):
         for length in [0, 1, limit // 2, limit]:
             # get a somewhat random bitvector
             bools = list(rng.randint(0, 1) == 1 for i in range(length))
-            b = Bitlist[limit](*bools)
+            b = typ(*bools)
             # Test iterator
             for i, bit in enumerate(b):
                 assert bool(bit) == bools[i]
 
+    rng = Random(123)
+    for limit in [1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 255, 256, 257, 511, 512, 513, 1023, 1024, 1025]:
+        run_test(Bitlist[limit], limit)
+        run_test(ProgressiveBitlist, limit)
 
-def test_bitlist_access():
-    bf = Bitlist[200](i % 2 == 1 for i in range(200))
+
+@pytest.mark.parametrize("typ", [Bitlist[200], ProgressiveBitlist])
+def test_bitlist_access(typ: Type[View]):
+    bf = typ(i % 2 == 1 for i in range(200))
     assert bf[int(123)]
     assert bf[uint64(123)]
     assert not bf[uint64(124)]
