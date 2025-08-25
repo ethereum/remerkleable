@@ -748,14 +748,28 @@ class _ContainerBase(ComplexView):
                 el.check_backing()
 
 
+def get_field_val_repr(self, fkey: str, ftype: Type[View]) -> str:
+    field_start = '  ' + fkey + ': ' + ftype.__name__ + ' = '
+    try:
+        field_repr = repr(getattr(self, fkey))
+        if '\n' in field_repr:  # if multiline, indent it, but starting from the value.
+            i = field_repr.index('\n')
+            field_repr = field_repr[:i+1] + indent(field_repr[i+1:], ' ' * len(field_start))
+        return field_start + field_repr
+    except NavigationError:
+        return f"{field_start} *omitted from partial*"
+
+
 class Container(_ContainerBase):
     _field_indices: Dict[str, int]
     __slots__ = '_field_indices'
 
     def __new__(cls, *args, backing: Optional[Node] = None, hook: Optional[ViewHook] = None,
                 append_nodes: Optional[PyList[Node]] = None, **kwargs):
+        if len(args) > 0:
+            raise Exception("use keyword arguments, positional arguments not supported")
         if backing is not None:
-            if len(args) != 0 or append_nodes is not None:
+            if append_nodes is not None:
                 raise Exception("cannot have both a backing and elements to init fields")
             return super().__new__(cls, backing=backing, hook=hook, **kwargs)
 
@@ -882,26 +896,15 @@ class Container(_ContainerBase):
                 raise AttributeError(f"unknown attribute {key}")
             super().set(i, value)
 
-    def _get_field_val_repr(self, fkey: str, ftype: Type[View]) -> str:
-        field_start = '  ' + fkey + ': ' + ftype.__name__ + ' = '
-        try:
-            field_repr = repr(getattr(self, fkey))
-            if '\n' in field_repr:  # if multiline, indent it, but starting from the value.
-                i = field_repr.index('\n')
-                field_repr = field_repr[:i+1] + indent(field_repr[i+1:], ' ' * len(field_start))
-            return field_start + field_repr
-        except NavigationError:
-            return f"{field_start} *omitted from partial*"
-
     def __repr__(self):
-        return f"{self.__class__.__name__}(Container)\n" + '\n'.join(
-            indent(self._get_field_val_repr(fkey, ftype), '  ')
+        return f"{self.__class__.__name__}(Container):\n" + '\n'.join(
+            indent(get_field_val_repr(self, fkey, ftype), '  ')
             for fkey, ftype in self.__class__.fields().items())
 
     @classmethod
     def type_repr(cls) -> str:
-        return f"{cls.__name__}(Container)\n" + '\n'.join(
-            ('  ' + fkey + ': ' + ftype.__name__) for fkey, ftype in cls.fields().items())
+        return f"{cls.__name__}(Container):\n" + '\n'.join(
+            ('    ' + fkey + ': ' + ftype.__name__) for fkey, ftype in cls.fields().items())
 
     def __iter__(self):
         tree_depth = self.tree_depth()

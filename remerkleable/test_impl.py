@@ -2,14 +2,14 @@
 
 # flake8:noqa E501  Ignore long lines, some test cases are just inherently long
 
-from typing import Iterable, Optional, Type
+from typing import Iterable, List as PyList, Optional, Type
 import io
 from remerkleable.complex import Container, Vector, List
 from remerkleable.basic import boolean, bit, byte, uint8, uint16, uint32, uint64, uint128, uint256
 from remerkleable.bitfields import Bitvector, Bitlist
 from remerkleable.byte_arrays import ByteVector, ByteList
 from remerkleable.core import View, ObjType
-from remerkleable.progressive import ProgressiveBitlist, ProgressiveList
+from remerkleable.progressive import ProgressiveBitlist, ProgressiveContainer, ProgressiveList
 from remerkleable.stable_container import Profile, StableContainer
 from remerkleable.union import Union
 from hashlib import sha256
@@ -59,6 +59,38 @@ class ProgressiveTestStruct(Container):
     B: ProgressiveList[uint64]
     C: ProgressiveList[SmallTestStruct]
     D: ProgressiveList[ProgressiveList[VarTestStruct]]
+
+class ProgressiveSingleFieldContainerTestStruct(
+    ProgressiveContainer(active_fields=[1])
+):
+    A: byte
+
+
+class ProgressiveSingleListContainerTestStruct(
+    ProgressiveContainer(active_fields=[0, 0, 0, 0, 1])
+):
+    C: ProgressiveBitlist
+
+
+class ProgressiveVarTestStruct(
+    ProgressiveContainer(active_fields=[1, 0, 1, 0, 1])
+):
+    A: byte
+    B: List[uint16, 123]
+    C: ProgressiveBitlist
+
+
+class ProgressiveComplexTestStruct(
+    ProgressiveContainer(active_fields=[1, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1])
+):
+    A: byte
+    B: List[uint16, 123]
+    C: ProgressiveBitlist
+    D: ProgressiveList[uint64]
+    E: ProgressiveList[SmallTestStruct]
+    F: ProgressiveList[ProgressiveList[VarTestStruct]]
+    G: List[ProgressiveSingleFieldContainerTestStruct, 10]
+    H: ProgressiveList[ProgressiveVarTestStruct]
 
 
 sig_test_data = [0 for i in range(96)]
@@ -248,6 +280,9 @@ test_data = [
         ), chunk("02")
     ), {'selector': 2, 'value': {'A': 0xabcd, 'B': [1, 2, 3], 'C': 0xff}}),
     ("singleFieldTestStruct", SingleFieldTestStruct, SingleFieldTestStruct(A=0xab), "ab", chunk("ab"), {'A': 0xab}),
+    ("progressiveSingleFieldContainerTestStruct", ProgressiveSingleFieldContainerTestStruct,
+     ProgressiveSingleFieldContainerTestStruct(A=0xab), "ab",
+     h(h(chunk(""), chunk("ab")), chunk("01")), {'A': 0xab}),
     ("uint16 list", List[uint16, 32], List[uint16, 32](uint16(0xaabb), uint16(0xc0ad), uint16(0xeeff)), "bbaaadc0ffee",
      h(h(chunk("bbaaadc0ffee"), chunk("")), chunk("03000000")),  # max length: 32 * 2 = 64 bytes = 2 chunks
      [0xaabb, 0xc0ad, 0xeeff]),
@@ -292,6 +327,12 @@ test_data = [
          zero_hashes[5:7]), chunk("13")),  # 128 chunks = 7 deep
      ['0x' + i.to_bytes(length=32, byteorder='little').hex() for i in range(1, 20)],
      ),
+    ("progressiveSingleListContainerTestStruct", ProgressiveSingleListContainerTestStruct,
+     ProgressiveSingleListContainerTestStruct(C=ProgressiveBitlist(1, 0, 0, 1, 0)),
+     "0400000029", h(
+         h(h(chunk(""), h(zero_hashes[1], h(zero_hashes[0], h(h(chunk(""), chunk("09")), chunk("05"))))), zero_hashes[0]),
+         chunk("10")
+     ), {'C': "0x29"}),
     ("fixedTestStruct", FixedTestStruct, FixedTestStruct(A=0xab, B=0xaabbccdd00112233, C=0x12345678), "ab33221100ddccbbaa78563412",
      h(h(chunk("ab"), chunk("33221100ddccbbaa")), h(chunk("78563412"), chunk(""))), {'A': 0xab, 'B': 0xaabbccdd00112233, 'C': 0x12345678}),
     ("varTestStruct nil", VarTestStruct, VarTestStruct(A=0xabcd, C=0xff), "cdab07000000ff",
@@ -314,6 +355,51 @@ test_data = [
          ),
          h(chunk("ff"), chunk(""))
     ), {'A': 0xabcd, 'B': [1, 2, 3], 'C': 0xff}),
+    ("progressiveVarTestStruct nil", ProgressiveVarTestStruct,
+     ProgressiveVarTestStruct(A=0xab),
+     "ab090000000900000001", h(
+         h(h(chunk(""), h(
+             h(
+                 zero_hashes[0],
+                 h(zero_hashes[3], chunk("00"))
+             ),
+             h(
+                 zero_hashes[0],
+                 h(chunk(""), chunk("00"))
+             )
+         )), chunk("ab")),
+         chunk("15")
+     ), {'A': 0xab, 'B': [], 'C': "0x01"}),
+    ("progressiveVarTestStruct empty", ProgressiveVarTestStruct,
+     ProgressiveVarTestStruct(A=0xab, B=List[uint16, 123](), C=ProgressiveBitlist()),
+     "ab090000000900000001", h(
+         h(h(chunk(""), h(
+             h(
+                 zero_hashes[0],
+                 h(zero_hashes[3], chunk("00"))
+             ),
+             h(
+                 zero_hashes[0],
+                 h(chunk(""), chunk("00"))
+             )
+         )), chunk("ab")),
+         chunk("15")
+     ), {'A': 0xab, 'B': [], 'C': "0x01"}),
+    ("progressiveVarTestStruct some", ProgressiveVarTestStruct,
+     ProgressiveVarTestStruct(A=0xab, B=List[uint16, 123](0x1122, 0x3344), C=ProgressiveBitlist(1, 0, 0, 1, 0)),
+     "ab090000000d0000002211443329", h(
+         h(h(chunk(""), h(
+             h(
+                 zero_hashes[0],
+                 h(merge(chunk("22114433"), zero_hashes[0:3]), chunk("02"))
+             ),
+             h(
+                 zero_hashes[0],
+                 h(h(chunk(""), chunk("09")), chunk("05"))
+             )
+         )), chunk("ab")),
+         chunk("15")
+     ), {'A': 0xab, 'B': [0x1122, 0x3344], 'C': "0x29"}),
     ("complexTestStruct", ComplexTestStruct,
      ComplexTestStruct(
          A=0xaabb,
@@ -398,6 +484,191 @@ test_data = [
             {'A': 0xdead, 'B': [1, 2, 3], 'C': 0x11},
             {'A': 0xbeef, 'B': [4, 5, 6], 'C': 0x22},
         ),
+     }),
+    ("progressiveComplexTestStruct", ProgressiveComplexTestStruct,
+     ProgressiveComplexTestStruct(
+         A=0xab,
+         B=List[uint16, 123](0x1122, 0x3344),
+         C=ProgressiveBitlist(1, 0, 0, 1, 0),
+         D=ProgressiveList[uint64](0x4242424242424242, 0x3333333333333333),
+         E=ProgressiveList[SmallTestStruct](
+             SmallTestStruct(A=0x4567, B=0x0123),
+             SmallTestStruct(A=0x89ab, B=0xcdef)
+         ),
+         F=ProgressiveList[ProgressiveList[VarTestStruct]](
+             ProgressiveList[VarTestStruct](
+                 VarTestStruct(A=0x123, B=List[uint16, 1024](1, 2, 3), C=0x12),
+                 VarTestStruct(A=0x456, B=List[uint16, 1024](4, 5, 6), C=0x45),
+                 VarTestStruct(A=0x789, B=List[uint16, 1024](7, 8, 9), C=0x78),
+             )
+         ),
+         G=List[ProgressiveSingleFieldContainerTestStruct, 10](
+             ProgressiveSingleFieldContainerTestStruct(),
+             ProgressiveSingleFieldContainerTestStruct(A=0x00),
+             ProgressiveSingleFieldContainerTestStruct(A=0x42),
+         ),
+         H=ProgressiveList[ProgressiveVarTestStruct](
+             ProgressiveVarTestStruct(A=0xab, B=List[uint16, 123](0x1122, 0x3344), C=ProgressiveBitlist(1, 0, 0, 1, 0)),
+         )
+     ),
+     "ab"
+     "1d0000002100000022000000320000003a0000007100000074000000"
+     "22114433"
+     "29"
+     "42424242424242423333333333333333"
+     "67452301ab89efcd"
+     "04000000"  # offset of F[0]
+     "0c000000"  # offset of F[0][0]
+     "19000000"  # offset of F[0][1]
+     "26000000"  # offset of F[0][2]
+     "23010700000012010002000300"  # F[0][0]
+     "56040700000045040005000600"  # F[0][1]
+     "89070700000078070008000900"  # F[0][2]
+     "000042"
+     "04000000"  # offset of H[0]
+     "ab090000000d0000002211443329",
+     h(
+         h(
+             h(
+                 h(
+                     h(chunk(""), merge(
+                         h(  # H
+                             h(
+                                 zero_hashes[0],  # terminator
+                                 h(
+                                     h(h(chunk(""), h(
+                                         h(
+                                             zero_hashes[0],
+                                             h(merge(chunk("22114433"), zero_hashes[0:3]), chunk("02"))
+                                         ),
+                                         h(
+                                             zero_hashes[0],
+                                             h(h(chunk(""), chunk("09")), chunk("05"))
+                                         )
+                                     )), chunk("ab")),
+                                     chunk("15")
+                                 )
+                             ),
+                             chunk("01")  # length mix in
+                         ), zero_hashes[0:6])),
+                     h(  # D, E, F, G
+                         h(
+                             h(zero_hashes[1], h(zero_hashes[0], h(  # D
+                                 h(zero_hashes[0], chunk("42424242424242423333333333333333")),
+                                 chunk("02")  # length mix in
+                             ))),
+                             h(zero_hashes[1], h(zero_hashes[0], h(  # E
+                                 h(
+                                     h(
+                                         zero_hashes[0],  # terminator
+                                         merge(h(chunk("ab89"), chunk("efcd")), zero_hashes[0:2])
+                                     ),
+                                     h(chunk("6745"), chunk("2301"))
+                                 ),
+                                 chunk("02")  # length mix in
+                             )))
+                         ),
+                         h(
+                             h(h(h(  # F
+                                 h(
+                                     zero_hashes[0],  # terminator
+                                     h(
+                                         h(
+                                             h(
+                                                 zero_hashes[0],  # terminator
+                                                 h(
+                                                     h(
+                                                         h(
+                                                             h(
+                                                                 chunk("5604"),
+                                                                 h(merge(chunk("040005000600"), zero_hashes[0:6]), chunk("03"))
+                                                             ),
+                                                             h(
+                                                                 chunk("45"),
+                                                                 zero_hashes[0]
+                                                             )
+                                                         ),
+                                                         h(
+                                                             h(
+                                                                 chunk("8907"),
+                                                                 h(merge(chunk("070008000900"), zero_hashes[0:6]), chunk("03"))
+                                                             ),
+                                                             h(
+                                                                 chunk("78"),
+                                                                 zero_hashes[0]
+                                                             )
+                                                         )
+                                                     ),
+                                                     zero_hashes[1]
+                                                 )
+                                             ),
+                                             h(
+                                                 h(
+                                                     chunk("2301"),
+                                                     h(merge(chunk("010002000300"), zero_hashes[0:6]), chunk("03"))
+                                                 ),
+                                                 h(
+                                                     chunk("12"),
+                                                     zero_hashes[0]
+                                                 )
+                                             )
+                                         ),
+                                         chunk("03")  # length mix in
+                                     )
+                                 ),
+                                 chunk("01")  # length mix in
+                             ), zero_hashes[0]), zero_hashes[1]),
+                             h(zero_hashes[1], h(zero_hashes[0], h(  # G
+                                 merge(h(
+                                     h(
+                                         h(h(chunk(""), chunk("00")), chunk("01")),
+                                         h(h(chunk(""), chunk("00")), chunk("01"))
+                                     ),
+                                     h(
+                                         h(h(chunk(""), chunk("42")), chunk("01")),
+                                         zero_hashes[0]
+                                     )
+                                 ), zero_hashes[2:4]),
+                                 chunk("03")  # length mix in
+                             )))
+                         )
+                     )
+                 ),
+                 h(  # B, C
+                     h(zero_hashes[0], h(  # B
+                         merge(chunk("22114433"), zero_hashes[0:3]),
+                         chunk("02")  # length mix in
+                     )),
+                     h(zero_hashes[0], h( # C
+                         h(chunk(""), chunk("09")),
+                         chunk("05")  # length mix in
+                     ))
+                 )
+             ),
+             chunk("ab")  # A
+         ),
+         chunk("153130")
+     ), {
+         'A': 0xab,
+         'B': [0x1122, 0x3344],
+         'C': "0x29",
+         'D': [0x4242424242424242, 0x3333333333333333],
+         'E': [{'A': 0x4567, 'B': 0x0123}, {'A': 0x89ab, 'B': 0xcdef}],
+         'F': [
+             [
+                 {'A': 0x123, 'B': [1, 2, 3], 'C': 0x12},
+                 {'A': 0x456, 'B': [4, 5, 6], 'C': 0x45},
+                 {'A': 0x789, 'B': [7, 8, 9], 'C': 0x78}
+             ],
+         ],
+         'G': [
+             {'A': 0x00},
+             {'A': 0x00},
+             {'A': 0x42},
+         ],
+         'H': [
+             {'A': 0xab, 'B': [0x1122, 0x3344], 'C': "0x29"},
+         ],
      }),
     ("progressiveList 0", ProgressiveList[uint16],
      ProgressiveList[uint16](),
@@ -897,29 +1168,50 @@ def test_readonly_iters(name: str, typ: Type[View], value: View, serialized: str
             assert False
         except StopIteration:
             pass
-    if isinstance(value, Container):
+    if isinstance(value, Container) or isinstance(value, ProgressiveContainer):
         fields = list(value)
         expected = [getattr(value, fkey) for fkey in value.__class__.fields().keys()]
         assert fields == expected
 
 
-def test_container_equality():
-    class A(Container):
+@pytest.mark.parametrize("base_typs", [
+    (Container, Container),
+    (ProgressiveContainer(active_fields=[1, 1, 1]), ProgressiveContainer(active_fields=[1, 1, 1, 1])),
+    (ProgressiveContainer(active_fields=[1, 1, 0, 0, 0, 1]), ProgressiveContainer(active_fields=[0, 1, 1, 1, 1])),
+])
+def test_container_equality(base_typs: PyList[Type[View]]):
+    class A(base_typs[0]):
         x: uint8
         y: uint8
         z: uint8
 
-    class B(Container):
+    class B(base_typs[1]):
         x: uint8
         y: uint8
         z: uint8
         v: uint8
 
-    assert A(1, 2, 3) == A(1, 2, 3)
-    assert B(1, 2, 3, 0) == B(1, 2, 3, 0)
-    assert A(1, 2, 3) != B(1, 2, 3, 0)
-    assert A(1, 2, 3) in {A(1, 2, 3)}
-    assert A(1, 2, 3) not in {B(1, 2, 3, 0)}
+    assert A(x=1, y=2, z=3) == A(x=1, y=2, z=3)
+    assert B(x=1, y=2, z=3, v=0) == B(x=1, y=2, z=3, v=0)
+    assert A(x=1, y=2, z=3) != B(x=1, y=2, z=3, v=0)
+    assert A(x=1, y=2, z=3) in {A(x=1, y=2, z=3)}
+    assert A(x=1, y=2, z=3) not in {B(x=1, y=2, z=3, v=0)}
+
+    class ContainerA(Container):
+        x: uint8
+        y: uint8
+        z: uint8
+
+    class ContainerB(Container):
+        x: uint8
+        y: uint8
+        z: uint8
+        v: uint8
+
+    assert A().encode_bytes() == ContainerA().encode_bytes()
+    assert B().encode_bytes() == ContainerB().encode_bytes()
+    assert A(x=1, y=2, z=3).encode_bytes() == ContainerA(x=1, y=2, z=3).encode_bytes()
+    assert B(x=1, y=2, z=3, v=4).encode_bytes() == ContainerB(x=1, y=2, z=3, v=4).encode_bytes()
 
 
 def test_progressive():

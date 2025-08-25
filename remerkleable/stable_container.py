@@ -12,7 +12,7 @@ from remerkleable.byte_arrays import ByteList, ByteVector
 from remerkleable.complex import ComplexView, Container, FieldOffset, List, Vector, \
     decode_offset, encode_offset
 from remerkleable.core import BackedView, View, ViewHook, ViewMeta, OFFSET_BYTE_LENGTH
-from remerkleable.progressive import ProgressiveBitlist, ProgressiveList
+from remerkleable.progressive import ProgressiveBitlist, ProgressiveContainer, ProgressiveList
 from remerkleable.tree import Gindex, NavigationError, Node, PairNode, \
     get_depth, subtree_fill_to_contents, zero_node, \
     RIGHT_GINDEX
@@ -404,8 +404,19 @@ def has_compatible_merkleization(ftyp, ftyp_base) -> bool:  # noqa: C901
             issubclass(ftyp_base, ProgressiveList)
             and has_compatible_merkleization(ftyp.element_cls(), ftyp_base.element_cls())
         )
+    if issubclass(ftyp, ProgressiveContainer):
+        if not issubclass(ftyp_base, ProgressiveContainer):
+            return False
+        field_indices = ftyp._field_indices
+        field_indices_base = ftyp_base._field_indices
+        for fkey in field_indices.keys() & field_indices_base.keys():
+            if field_indices[fkey] != field_indices_base[fkey]:
+                return False
+            if not has_compatible_merkleization(ftyp.fields()[fkey], ftyp_base.fields()[fkey]):
+                return False
+        return True
     if issubclass(ftyp, Container):
-        if not issubclass(ftyp_base, Container):
+        if not issubclass(ftyp_base, Container) or issubclass(ftyp_base, ProgressiveContainer):
             return False
         fields = ftyp.fields()
         fields_base = ftyp_base.fields()
