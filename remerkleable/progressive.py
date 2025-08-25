@@ -1,15 +1,17 @@
 # This file implements `ProgressiveList` according to https://eips.ethereum.org/EIPS/eip-7916
+# and `ProgressiveContainer` according to https://eips.ethereum.org/EIPS/eip-7495
 # The EIP is still under review, functionality may change or go away without deprecation.
 
-from itertools import chain
-from typing import BinaryIO, Iterator, List as PyList, Optional, Tuple, Type, TypeVar, cast
+from typing import Any, BinaryIO, Dict, Iterator, List as PyList, Literal, Optional, Tuple, Type, TypeVar, cast
 from types import GeneratorType
+from textwrap import indent
 from remerkleable.basic import boolean, uint8, uint256
-from remerkleable.bitfields import BitsView, append_bit, deserialize_bits, pop_bit, serialize_bits
-from remerkleable.core import BasicView, ObjType, View, ViewHook, OFFSET_BYTE_LENGTH, pack_bits_to_chunks
-from remerkleable.complex import MonoSubtreeView, create_readonly_iter, append_view, pop_and_summarize
-from remerkleable.readonly_iters import BitfieldIter
-from remerkleable.tree import Gindex, Node, PairNode, subtree_fill_to_contents, zero_node
+from remerkleable.bitfields import BitsView, Bitvector, append_bit, deserialize_bits, pop_bit, serialize_bits
+from remerkleable.core import BasicView, ObjType, View, ViewHook, ViewMeta, OFFSET_BYTE_LENGTH, pack_bits_to_chunks
+from remerkleable.complex import Container, Fields, MonoSubtreeView, \
+    append_view, create_readonly_iter, get_field_val_repr, pop_and_summarize
+from remerkleable.readonly_iters import BitfieldIter, NodeIter
+from remerkleable.tree import Gindex, Node, PairNode, subtree_fill_to_contents, zero_node, LEFT_GINDEX, RIGHT_GINDEX
 
 V = TypeVar('V', bound=View)
 
@@ -24,31 +26,22 @@ def subtree_fill_progressive(nodes: PyList[Node], depth=0) -> Node:
     )
 
 
-def readonly_iter_progressive(backing: Node, length: int, elem_type: Type[View], is_packed: bool, depth=0):
-    if length == 0:
-        assert uint256.view_from_backing(backing) == uint256(0)
-
-        class EmptyIter(object):
-            def __iter__(self):
-                return self
-
-            def __next__(self):
-                raise StopIteration
-        return EmptyIter()
-
-    base_size = 1 << depth
-    elems_per_chunk = 32 // elem_type.type_byte_length() if is_packed else 1
-
-    subtree_len = min(base_size * elems_per_chunk, length)
-    return chain(
-        create_readonly_iter(backing.get_right(), depth, subtree_len, elem_type, is_packed),
-        readonly_iter_progressive(backing.get_left(), length - subtree_len, elem_type, is_packed, depth + 2),
-    )
+def readonly_iter_progressive(backing: Node, length: int, elem_type: Type[View], is_packed: bool):
+    yield from []
+    tree_depth = 0
+    while length > 0:
+        base_size = 1 << tree_depth
+        elems_per_chunk = 32 // elem_type.type_byte_length() if is_packed else 1
+        subtree_len = min(base_size * elems_per_chunk, length)
+        yield from create_readonly_iter(backing.get_right(), tree_depth, subtree_len, elem_type, is_packed)
+        backing = backing.get_left()
+        length -= subtree_len
+        tree_depth += 2
 
 
 def to_gindex_progressive(chunk_i: int) -> Tuple[Gindex, int, int]:
     depth = 0
-    gindex = 2
+    gindex = LEFT_GINDEX
     while True:
         base_size = 1 << depth
         if chunk_i < base_size:
@@ -64,7 +57,7 @@ def to_target_progressive(i: int, elems_per_chunk: int = 1) -> Tuple[Gindex, int
     _, depth, chunk_i = to_gindex_progressive(chunk_i)
     i = chunk_i * elems_per_chunk + offset_i
 
-    target = 2
+    target = LEFT_GINDEX
     d = 0
     while d < depth:
         target <<= 1
@@ -153,7 +146,7 @@ class ProgressiveList(MonoSubtreeView):
         elem_type: Type[View] = self.element_cls()
         is_packed = self.is_packed()
 
-        return readonly_iter_progressive(backing, length, elem_type, is_packed)
+        yield from readonly_iter_progressive(backing, length, elem_type, is_packed)
 
     def append(self, v: View):
         ll = self.length()
@@ -234,18 +227,12 @@ class ProgressiveList(MonoSubtreeView):
 
 
 def iter_progressive_bitlist(backing: Node, bitlen: int) -> Iterator[Tuple[Node, int, int, bool]]:
-    if bitlen == 0:
-        assert uint256.view_from_backing(backing) == uint256(0)
-        yield from []
-        return
-
+    yield from []
     tree_depth = 0
-    while True:
+    while bitlen > 0:
         base_bits = 256 << tree_depth
         is_final_chunk = bitlen <= base_bits
         yield backing.get_right(), tree_depth, min(bitlen, base_bits), is_final_chunk
-        if is_final_chunk:
-            return
         backing = backing.get_left()
         bitlen -= base_bits
         tree_depth += 2
@@ -286,7 +273,7 @@ class ProgressiveBitlist(BitsView):
 
     @classmethod
     def type_repr(cls) -> str:
-        return f"ProgressiveBitlist"
+        return f'ProgressiveBitlist'
 
     @classmethod
     def min_byte_length(cls) -> int:
@@ -371,3 +358,186 @@ class ProgressiveBitlist(BitsView):
                 with_delimiting_bit=is_final_chunk,
             )
         return byte_len
+
+
+def iter_progressive_container(backing: Node, active_fields: PyList[Literal[0, 1]], elem_types: PyList[Type[View]]):
+    yield from []
+    tree_depth = 0
+    node_index = 0
+    field_index = 0
+    length = len(active_fields)
+    while length > 0:
+        base_size = 1 << tree_depth
+        subtree_len = min(base_size, length)
+        for node in NodeIter(backing.get_right(), tree_depth, subtree_len):
+            if node_index >= len(active_fields):
+                return
+            if active_fields[node_index] == 1:
+                yield elem_types[field_index].view_from_backing(node, None)
+                field_index += 1
+            node_index += 1
+        backing = backing.get_left()
+        length -= subtree_len
+        tree_depth += 2
+
+
+class ProgressiveContainer(Container):
+    _active_fields: PyList[Literal[0, 1]]
+    _field_indices: Dict[str, int]
+    __slots__ = '_active_fields', '_field_indices'
+
+    def __init_subclass__(cls, **kwargs):
+        if '_active_fields' not in kwargs:
+            raise TypeError(f'`active_fields` missing: `{cls.__name__}(ProgressiveContainer)`')
+        cls._active_fields = kwargs.pop('_active_fields')
+
+    def __new__(cls, active_fields: PyList[Literal[0, 1]]):
+        class ProgressiveContainerMeta(ViewMeta):
+            def __new__(cls, name, bases, dct):
+                return super().__new__(cls, name, bases, dct, _active_fields=active_fields)
+
+        class ProgressiveContainerView(ProgressiveContainer, metaclass=ProgressiveContainerMeta):
+            def __init_subclass__(cls, **kwargs):
+                if not all(x in (0, 1) for x in active_fields):
+                    raise TypeError(
+                        f'`active_fields` invalid: '
+                        f'`{cls.__name__}(ProgressiveContainer(active_fields={active_fields}))`')
+                if len(active_fields) == 0:
+                    raise TypeError(
+                        f'`active_fields` cannot be empty: '
+                        f'`{cls.__name__}(ProgressiveContainer(active_fields={active_fields}))`')
+                if active_fields[-1] == 0:
+                    raise TypeError(
+                        f'`active_fields` cannot end in 0: '
+                        f'`{cls.__name__}(ProgressiveContainer(active_fields={active_fields}))`')
+                if sum(active_fields) != len(cls.fields()):
+                    raise TypeError(
+                        f'`active_fields` count of 1 entries ({sum(active_fields)}) must match number of fields ({len(cls.fields())}): '
+                        f'`{cls.__name__}(ProgressiveContainer(active_fields={active_fields}))`')
+                if len(active_fields) > 256:
+                    raise TypeError(
+                        f'`active_fields` cannot have more than 256 entries: '
+                        f'`{cls.__name__}(ProgressiveContainer(active_fields={active_fields}))`')
+                if len(active_fields) >= 256 and 'more' not in cls.fields():
+                    # A `ProgressiveContainer` cannot have more than 256 fields across iterations.
+                    # A `more` field is recommended to enable introducing additional fields
+                    raise TypeError(
+                        f'`active_fields` at capacity but no `more` field present: '
+                        f'`{cls.__name__}(ProgressiveContainer(active_fields={active_fields}))`')
+
+                cls._field_indices = {}
+                field_index = 0
+                for fkey, ftyp in cls.fields().items():
+                    if not isinstance(ftyp, View):
+                        raise TypeError(
+                            f'`{fkey}: {ftyp}` is not a `View`: '
+                            f'`{cls.__name__}(ProgressiveContainer(active_fields={active_fields}))`')
+                    while active_fields[field_index] == 0:
+                        field_index += 1
+                    cls._field_indices[fkey] = field_index
+                    field_index += 1
+
+            def __new__(cls, *args, backing: Optional[Node] = None, hook: Optional[ViewHook] = None, **kwargs):
+                if len(args) > 0:
+                    raise Exception('use keyword arguments, positional arguments not supported')
+                if backing is not None:
+                    if len(kwargs) != 0:
+                        raise Exception('cannot have both a backing and elements to init fields')
+                    return Container.__new__(cls, backing=backing, hook=hook, **kwargs)
+
+                input_nodes = []
+                field_index = 0
+                for fkey, ftyp in cls.fields().items():
+                    while active_fields[field_index] == 0:
+                        input_nodes.append(zero_node(0))
+                        field_index += 1
+                    if fkey in kwargs:
+                        finput = kwargs.pop(fkey)
+                        if isinstance(finput, View):
+                            fnode = finput.get_backing()
+                        else:
+                            fnode = ftyp.coerce_view(finput).get_backing()
+                    else:
+                        fnode = ftyp.default_node()
+                    input_nodes.append(fnode)
+                    field_index += 1
+                if len(kwargs) > 0:
+                    raise AttributeError(f'The field names [{"".join(kwargs.keys())}] are not defined in {cls}')
+
+                backing = PairNode(
+                    subtree_fill_progressive(input_nodes),
+                    Bitvector[256](active_fields + [0] * (256 - len(active_fields))).get_backing(),
+                )
+                return Container.__new__(cls, backing=backing, hook=hook, **kwargs)
+
+        return ProgressiveContainerView
+
+    @classmethod
+    def fields(cls) -> Fields:
+        return cls.__dict__.get('__annotations__', {})
+
+    @classmethod
+    def tree_depth(cls) -> int:
+        raise AttributeError('Progressive containers do not have a fixed tree depth')
+
+    @classmethod
+    def item_elem_cls(cls, i: int) -> Type[View]:
+        for fkey, field_index in cls._field_indices.items():
+            if field_index == i:
+                return cls.fields()[fkey]
+        raise IndexError(f'no field with index {i}')
+
+    @classmethod
+    def default_node(cls) -> Node:
+        active_fields = cls._active_fields
+        input_nodes = []
+        field_index = 0
+        for ftyp in cls.fields().values():
+            while active_fields[field_index] == 0:
+                input_nodes.append(zero_node(0))
+                field_index += 1
+            input_nodes.append(ftyp.default_node())
+            field_index += 1
+        return PairNode(
+            subtree_fill_progressive(input_nodes),
+            Bitvector[256](active_fields + [0] * (256 - len(active_fields))).get_backing(),
+        )
+
+    def active_fields(self) -> Bitvector[256]:
+        active_fields_node = super().get_backing().get_right()
+        return Bitvector[256].view_from_backing(active_fields_node)
+
+    @classmethod
+    def chunk_to_gindex(cls, chunk_i: int) -> Gindex:
+        gindex, _, _ = to_gindex_progressive(chunk_i)
+        return gindex
+
+    def __iter__(self):
+        active_fields = self.__class__._active_fields
+        backing = self.get_backing().get_left()
+        yield from iter_progressive_container(backing, active_fields, list(self.__class__.fields().values()))
+
+    def __repr__(self):
+        active_fields = self.__class__._active_fields
+        return f'{self.__class__.__name__}(ProgressiveContainer(active_fields={active_fields})):\n' + '\n'.join(
+            indent(get_field_val_repr(self, fkey, ftype), '  ')
+            for fkey, ftype in self.__class__.fields().items())
+
+    @classmethod
+    def type_repr(cls) -> str:
+        active_fields = cls._active_fields
+        return f'{cls.__name__}(ProgressiveContainer(active_fields={active_fields})):\n' + '\n'.join(
+            ('    ' + fkey + ': ' + ftype.__name__) for fkey, ftype in cls.fields().items())
+
+    @classmethod
+    def navigate_type(cls, key: Any) -> Type[View]:
+        if key == '__active_fields__':
+            return Bitvector[256]
+        return cls.fields()[key]
+
+    @classmethod
+    def key_to_static_gindex(cls, key: Any) -> Gindex:
+        if key == '__active_fields__':
+            return RIGHT_GINDEX
+        field_index = cls._field_indices[key]
+        return cls.chunk_to_gindex(field_index)

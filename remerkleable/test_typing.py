@@ -11,7 +11,7 @@ from remerkleable.basic import boolean, bit, uint, byte, uint8, uint16, uint32, 
 from remerkleable.bitfields import Bitvector, Bitlist
 from remerkleable.byte_arrays import ByteVector, Bytes1, Bytes4, Bytes8, Bytes32, Bytes48, Bytes96
 from remerkleable.core import BasicView, View
-from remerkleable.progressive import ProgressiveBitlist, ProgressiveList
+from remerkleable.progressive import ProgressiveBitlist, ProgressiveContainer, ProgressiveList
 from remerkleable.stable_container import Profile, StableContainer
 from remerkleable.union import Union
 from remerkleable.tree import get_depth, merkle_hash, LEFT_GINDEX, RIGHT_GINDEX
@@ -33,7 +33,7 @@ def test_subclasses():
     assert issubclass(boolean, BasicView)
     assert issubclass(boolean, View)
 
-    for c in [Container, List, Vector, ProgressiveList, Bytes32]:
+    for c in [Container, List, Vector, ProgressiveContainer, ProgressiveList, Bytes32]:
         assert issubclass(c, View)
 
 
@@ -107,69 +107,95 @@ def test_container():
         a: uint8
         b: uint32
 
-    empty = Foo()
-    assert empty.a == uint8(0)
-    assert empty.b == uint32(0)
+    class ProgressiveFoo1(ProgressiveContainer(active_fields=[1, 1])):
+        a: uint8
+        b: uint32
 
-    assert issubclass(Foo, Container)
-    assert issubclass(Foo, View)
+    class ProgressiveFoo2(ProgressiveContainer(active_fields=[1, 0, 0, 0, 0, 1])):
+        a: uint8
+        b: uint32
 
-    assert Foo.is_fixed_byte_length()
-    x = Foo(a=uint8(123), b=uint32(45))
-    assert x.a == 123
-    assert x.b == 45
-    assert isinstance(x.a, uint8)
-    assert isinstance(x.b, uint32)
-    assert x.__class__.is_fixed_byte_length()
+    def run_foo_test(typ: Type[View], base_typ: Type[View]):
+        empty = typ()
+        assert empty.a == uint8(0)
+        assert empty.b == uint32(0)
+
+        assert issubclass(typ, base_typ)
+        assert issubclass(typ, View)
+
+        assert typ.is_fixed_byte_length()
+        x = typ(a=uint8(123), b=uint32(45))
+        assert x.a == 123
+        assert x.b == 45
+        assert isinstance(x.a, uint8)
+        assert isinstance(x.b, uint32)
+        assert x.__class__.is_fixed_byte_length()
+
+        try:
+            typ(wrong_field_name=100)
+            assert False
+        except AttributeError:
+            pass
+
+    run_foo_test(Foo, Container)
+    run_foo_test(ProgressiveFoo1, ProgressiveContainer)
+    run_foo_test(ProgressiveFoo2, ProgressiveContainer)
 
     class Bar(Container):
         a: uint8
         b: List[uint8, 1024]
 
-    assert not Bar.is_fixed_byte_length()
+    class ProgressiveBar1(ProgressiveContainer(active_fields=[1, 1])):
+        a: uint8
+        b: List[uint8, 1024]
 
-    y = Bar(a=123, b=List[uint8, 1024](uint8(1), uint8(2)))
-    assert y.a == 123
-    assert isinstance(y.a, uint8)
-    assert len(y.b) == 2
-    assert isinstance(y.a, uint8)
-    assert not y.__class__.is_fixed_byte_length()
-    assert y.b[0] == 1
-    v: List = y.b
-    assert v.__class__.element_cls() == uint8
-    assert v.__class__.limit() == 1024
+    class ProgressiveBar2(ProgressiveContainer(active_fields=[0, 0, 1, 0, 0, 1])):
+        a: uint8
+        b: List[uint8, 1024]
 
-    field_values = list(y)
-    assert field_values == [y.a, y.b]
+    def run_bar_test(typ: Type[View]):
+        assert not typ.is_fixed_byte_length()
 
-    f_a, f_b = y
-    assert f_a == y.a
-    assert f_b == y.b
+        y = typ(a=123, b=List[uint8, 1024](uint8(1), uint8(2)))
+        assert y.a == 123
+        assert isinstance(y.a, uint8)
+        assert len(y.b) == 2
+        assert isinstance(y.a, uint8)
+        assert not y.__class__.is_fixed_byte_length()
+        assert y.b[0] == 1
+        v: List = y.b
+        assert v.__class__.element_cls() == uint8
+        assert v.__class__.limit() == 1024
 
-    y.a = 42
-    try:
-        y.a = 256  # out of bounds
-        assert False
-    except ValueError:
-        pass
+        field_values = list(y)
+        assert field_values == [y.a, y.b]
 
-    try:
-        y.a = uint16(255)  # within bounds, wrong type
-        assert False
-    except ValueError:
-        pass
+        f_a, f_b = y
+        assert f_a == y.a
+        assert f_b == y.b
 
-    try:
-        y.not_here = 5
-        assert False
-    except AttributeError:
-        pass
+        y.a = 42
+        try:
+            y.a = 256  # out of bounds
+            assert False
+        except ValueError:
+            pass
 
-    try:
-        Foo(wrong_field_name=100)
-        assert False
-    except AttributeError:
-        pass
+        try:
+            y.a = uint16(255)  # within bounds, wrong type
+            assert False
+        except ValueError:
+            pass
+
+        try:
+            y.not_here = 5
+            assert False
+        except AttributeError:
+            pass
+
+    run_bar_test(Bar)
+    run_bar_test(ProgressiveBar1)
+    run_bar_test(ProgressiveBar2)
 
 
 def test_container_unpack():
@@ -178,9 +204,24 @@ def test_container_unpack():
         b: uint8
         c: Vector[uint16, 123]
 
-    foo = Foo(b=42)
-    a, b, c = foo
-    assert b == 42
+    class ProgressiveFoo1(ProgressiveContainer(active_fields=[1, 1, 1])):
+        a: uint64
+        b: uint8
+        c: Vector[uint16, 123]
+
+    class ProgressiveFoo2(ProgressiveContainer(active_fields=[1, 0, 1, 0, 0, 1])):
+        a: uint64
+        b: uint8
+        c: Vector[uint16, 123]
+
+    def run_test(typ: Type[View]):
+        foo = typ(b=42)
+        a, b, c = foo
+        assert b == 42
+
+    run_test(Foo)
+    run_test(ProgressiveFoo1)
+    run_test(ProgressiveFoo2)
 
 
 @pytest.mark.parametrize("typ", [List[uint64, 128], ProgressiveList[uint64]])
@@ -422,6 +463,40 @@ def test_paths():
     assert (Bitlist[123] / "__len__").navigate_type() == uint256
     try:
         (Bitlist[123] / 123).navigate_type()
+        assert False
+    except KeyError:
+        pass
+
+    class Square(ProgressiveContainer(active_fields=[1, 0, 1])):
+        side: uint16
+        color: uint8
+
+    class Circle(ProgressiveContainer(active_fields=[0, 1, 1])):
+        radius: uint16
+        color: uint8
+
+    assert issubclass((Square / '__active_fields__').navigate_type(), Bitvector)
+    assert (Square / '__active_fields__').navigate_type().vector_length() == 256
+    assert (Square / '__active_fields__').gindex() == 0b11
+    assert (Square / 'side').navigate_type() == uint16
+    assert (Square / 'side').gindex() == 0b101
+    assert (Square / 'color').navigate_type() == uint8
+    assert (Square / 'color').gindex() == 0b100101
+    try:
+        (Square / 'radius').navigate_type()
+        assert False
+    except KeyError:
+        pass
+
+    assert issubclass((Circle / '__active_fields__').navigate_type(), Bitvector)
+    assert (Circle / '__active_fields__').navigate_type().vector_length() == 256
+    assert (Circle / '__active_fields__').gindex() == 0b11
+    assert (Circle / 'radius').navigate_type() == uint16
+    assert (Circle / 'radius').gindex() == 0b100100
+    assert (Circle / 'color').navigate_type() == uint8
+    assert (Circle / 'color').gindex() == 0b100101
+    try:
+        (Circle / 'side').navigate_type()
         assert False
     except KeyError:
         pass
