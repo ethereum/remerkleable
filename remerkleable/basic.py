@@ -1,3 +1,4 @@
+from functools import lru_cache
 from typing import Any, TypeVar, Type
 from remerkleable.core import BasicView, View, ObjType, ObjParseException
 from remerkleable.settings import ENDIANNESS
@@ -23,7 +24,7 @@ class boolean(int, BasicView):
     def __new__(cls, value: int):  # int value, but can be any subclass of int (bool, Bit, Bool, etc...)
         if value < 0 or value > 1:
             raise ValueError(f"value {value} out of bounds for bit")
-        return super().__new__(cls, value)  # type: ignore
+        return super().__new__(cls, value)
 
     def __add__(self, other):
         raise OperationNotSupported(f"cannot add bool ({self} + {other})")
@@ -68,6 +69,11 @@ class boolean(int, BasicView):
     def type_repr(cls) -> str:
         return "boolean"
 
+    @classmethod
+    @lru_cache(maxsize=None)
+    def type_tree_shape(cls) -> Any:
+        return 1
+
 
 T = TypeVar('T', bound="uint")
 W = TypeVar('W', bound=int)
@@ -82,7 +88,7 @@ class uint(int, BasicView):
         byte_len = cls.type_byte_length()
         if value.bit_length() > (byte_len << 3):
             raise ValueError(f"value out of bounds for {cls}")
-        return super().__new__(cls, value)  # type: ignore
+        return super().__new__(cls, value)
 
     def __add__(self: T, other: int) -> T:
         return self.__class__(super().__add__(self.__class__.coerce_view(other)))
@@ -139,7 +145,7 @@ class uint(int, BasicView):
         if not isinstance(other, uint):
             raise ValueError(f"{other} << {self} through __rlshift__ is not supported, "
                              f"left operand {other} must be a uint type with __lshift__")
-        return other.__lshift__(self)  # type: ignore
+        return other.__lshift__(self)
 
     def __rshift__(self: T, other: int) -> T:
         return self.__class__(super().__rshift__(int(other)))
@@ -148,7 +154,7 @@ class uint(int, BasicView):
         if not isinstance(other, uint):
             raise ValueError(f"{other} >> {self} through __rrshift__ is not supported, "
                              f"left operand {other} must be a uint type with __rshift__")
-        return other.__rshift__(self)  # type: ignore
+        return other.__rshift__(self)
 
     def __and__(self: T, other: int) -> T:
         return self.__class__(super().__and__(self.__class__.coerce_view(other)))
@@ -214,6 +220,11 @@ class uint(int, BasicView):
     @classmethod
     def type_repr(cls) -> str:
         return f"uint{cls.type_byte_length()*8}"
+
+    @classmethod
+    @lru_cache(maxsize=None)
+    def type_tree_shape(cls) -> Any:
+        return cls.type_byte_length()*8
 
 
 class uint8(uint):

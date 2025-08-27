@@ -1,5 +1,6 @@
-from typing import Callable, Optional, Any, cast, List as PyList, BinaryIO,\
-    TypeVar, Type, Protocol, runtime_checkable, Union
+from functools import lru_cache
+from typing import Callable, Dict, List as PyList, Optional, Any, cast, List as PyList, BinaryIO,\
+    Tuple, TypeVar, Type, Protocol, runtime_checkable, Union
 
 # noinspection PyUnresolvedReferences
 from typing import _ProtocolMeta  # type: ignore
@@ -22,7 +23,7 @@ class ViewMeta(_ProtocolMeta):
         return Path.from_raw_path(anchor=cast(Type[View], self), path=[other])
 
 
-ObjType = Union[dict, list, tuple, str, int, bool, None]
+ObjType = Union[Dict[Any, Any], PyList[Any], Tuple[Any, ...], str, int, bool, None]
 
 
 class ObjParseException(Exception):
@@ -129,6 +130,11 @@ class View(Protocol, metaclass=ViewMeta):
     @classmethod
     def type_repr(cls) -> str:
         ...
+
+    @classmethod
+    @lru_cache(maxsize=None)
+    def type_tree_shape(cls) -> Any:
+        raise NotImplementedError
 
     @classmethod
     def navigate_type(cls, key: Any) -> Type["View"]:
@@ -241,7 +247,7 @@ class BackedView(View):
     def get_backing(self) -> Node:
         return self._backing
 
-    def set_backing(self, value):
+    def set_backing(self, value: Node):
         self._backing = value
         # Propagate up the change if the view is hooked to a super view
         if self._hook is not None:

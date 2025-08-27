@@ -9,7 +9,7 @@ from remerkleable.basic import boolean, bit, byte, uint8, uint16, uint32, uint64
 from remerkleable.bitfields import Bitvector, Bitlist
 from remerkleable.byte_arrays import ByteVector, ByteList
 from remerkleable.core import View, ObjType
-from remerkleable.progressive import ProgressiveBitlist, ProgressiveContainer, ProgressiveList
+from remerkleable.progressive import CompatibleUnion, ProgressiveBitlist, ProgressiveContainer, ProgressiveList
 from remerkleable.stable_container import Profile, StableContainer
 from remerkleable.union import Union
 from hashlib import sha256
@@ -244,6 +244,21 @@ test_data = [
        h(h(h(chunk("03"), chunk("")), zero_hashes[1]), chunk(""))),
      ("0x01" + ("00" * 95), "0x02" + ("00" * 95), "0x03" + ("00" * 95)),
      ),
+    ("compatibleUnionA", CompatibleUnion({1: ProgressiveSingleFieldContainerTestStruct}),
+     CompatibleUnion({1: ProgressiveSingleFieldContainerTestStruct})(
+         selector=1, data=ProgressiveSingleFieldContainerTestStruct(A=0xab)
+     ), "01ab", h(h(h(chunk(""), chunk("ab")), chunk("01")), chunk("01")), {'selector': 1, 'data': {'A': 0xab}}),
+    ("compatibleUnionBC", CompatibleUnion({2: ProgressiveSingleListContainerTestStruct, 3: ProgressiveVarTestStruct}),
+     CompatibleUnion({2: ProgressiveSingleListContainerTestStruct, 3: ProgressiveVarTestStruct})(
+         selector=2, data=ProgressiveSingleListContainerTestStruct(C=ProgressiveBitlist(1, 0, 0, 1, 0)),
+     ), "020400000029", h(h(
+         h(h(chunk(""), h(zero_hashes[1], h(zero_hashes[0], h(h(chunk(""), chunk("09")), chunk("05"))))), zero_hashes[0]),
+         chunk("10")
+     ), chunk("02")), {'selector': 2, 'data': {'C': "0x29"}}),
+    ("compatibleUnionABCA", CompatibleUnion({1: ProgressiveSingleFieldContainerTestStruct, 2: ProgressiveSingleListContainerTestStruct, 3: ProgressiveVarTestStruct, 4: ProgressiveSingleFieldContainerTestStruct}),
+     CompatibleUnion({1: ProgressiveSingleFieldContainerTestStruct, 2: ProgressiveSingleListContainerTestStruct, 3: ProgressiveVarTestStruct, 4: ProgressiveSingleFieldContainerTestStruct})(
+         selector=4, data=ProgressiveSingleFieldContainerTestStruct(A=0xab)
+     ), "04ab", h(h(h(chunk(""), chunk("ab")), chunk("01")), chunk("04")), {'selector': 4, 'data': {'A': 0xab}}),
     ("single_type_union", Union[uint16], Union[uint16](selector=0, value=uint16(0xaabb)),
      "00bbaa", h(chunk("bbaa"), chunk("")), {'selector': 0, 'value': 0xaabb}),
     ("simple_union", Union[uint16, uint32], Union[uint16, uint32](selector=0, value=uint16(0xaabb)),
