@@ -1,5 +1,5 @@
-from typing import NamedTuple, cast, List as PyList, Dict, Any, BinaryIO, Optional,\
-    TypeVar, Type, Protocol, runtime_checkable
+from functools import lru_cache
+from typing import Iterator, NamedTuple, cast, List as PyList, Dict, Any, BinaryIO, Optional, TypeVar, Type
 from types import GeneratorType
 from textwrap import indent
 from collections.abc import Sequence as ColSequence
@@ -24,7 +24,7 @@ def encode_offset(stream: BinaryIO, offset: int):
     return uint32(offset).serialize(stream)
 
 
-def create_readonly_iter(backing: Node, tree_depth: int, length: int, elem_type: Type[View], is_packed: bool):
+def create_readonly_iter(backing: Node, tree_depth: int, length: int, elem_type: Type[View], is_packed: bool) -> Iterator[View]:
     if is_packed:
         return PackedIter(backing, tree_depth, length, cast(Type[BasicView], elem_type))
     else:
@@ -464,6 +464,11 @@ class List(MonoSubtreeView):
         return f"List[{cls.element_cls().__name__}, {cls.limit()}]"
 
     @classmethod
+    @lru_cache(maxsize=None)
+    def type_tree_shape(cls) -> Any:
+        return (f"l{cls.limit()}", cls.element_cls().type_tree_shape())
+
+    @classmethod
     def is_packed(cls) -> bool:
         raise NotImplementedError
 
@@ -647,6 +652,11 @@ class Vector(MonoSubtreeView):
         return f"Vector[{cls.element_cls().__name__}, {cls.vector_length()}]"
 
     @classmethod
+    @lru_cache(maxsize=None)
+    def type_tree_shape(cls) -> Any:
+        return (f"v{cls.vector_length()}", cls.element_cls().type_tree_shape())
+
+    @classmethod
     def vector_length(cls) -> int:
         raise NotImplementedError
 
@@ -710,15 +720,6 @@ class FieldOffset(NamedTuple):
     offset: int
 
 
-@runtime_checkable
-class _ContainerLike(Protocol):
-    __slots__ = ()
-
-    @classmethod
-    def fields(cls) -> Fields:
-        ...
-
-
 CV = TypeVar('CV', bound="Container")
 
 
@@ -748,7 +749,7 @@ class _ContainerBase(ComplexView):
                 el.check_backing()
 
 
-def get_field_val_repr(self, fkey: str, ftype: Type[View]) -> str:
+def get_field_val_repr(self: View, fkey: str, ftype: Type[View]) -> str:
     field_start = '  ' + fkey + ': ' + ftype.__name__ + ' = '
     try:
         field_repr = repr(getattr(self, fkey))
@@ -905,6 +906,11 @@ class Container(_ContainerBase):
     def type_repr(cls) -> str:
         return f"{cls.__name__}(Container):\n" + '\n'.join(
             ('    ' + fkey + ': ' + ftype.__name__) for fkey, ftype in cls.fields().items())
+
+    @classmethod
+    @lru_cache(maxsize=None)
+    def type_tree_shape(cls) -> Any:
+        return tuple((fkey, ftype.type_tree_shape()) for fkey, ftype in cls.fields().items())
 
     def __iter__(self):
         tree_depth = self.tree_depth()

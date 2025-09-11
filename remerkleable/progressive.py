@@ -1,13 +1,18 @@
-# This file implements `ProgressiveList` according to https://eips.ethereum.org/EIPS/eip-7916
-# and `ProgressiveContainer` according to https://eips.ethereum.org/EIPS/eip-7495
-# The EIP is still under review, functionality may change or go away without deprecation.
+# This file implements:
+# - `ProgressiveList` / `ProgressiveBitlist` according to https://eips.ethereum.org/EIPS/eip-7916
+# - `ProgressiveContainer` according to https://eips.ethereum.org/EIPS/eip-7495
+# - `CompatibleUnion` according to https://eips.ethereum.org/EIPS/eip-8016
 
-from typing import Any, BinaryIO, Dict, Iterator, List as PyList, Literal, Optional, Tuple, Type, TypeVar, cast
+from collections import defaultdict
+from functools import lru_cache
+from typing import Any, BinaryIO, Dict, Iterator, Literal, Optional, Sequence, Tuple, Type, TypeVar, Union
 from types import GeneratorType
 from textwrap import indent
+import io
 from remerkleable.basic import boolean, uint8, uint256
 from remerkleable.bitfields import BitsView, Bitvector, append_bit, deserialize_bits, pop_bit, serialize_bits
-from remerkleable.core import BasicView, ObjType, View, ViewHook, ViewMeta, OFFSET_BYTE_LENGTH, pack_bits_to_chunks
+from remerkleable.core import BackedView, BasicView, ObjType, View, ViewHook, ViewMeta, \
+    OFFSET_BYTE_LENGTH, pack_bits_to_chunks
 from remerkleable.complex import Container, Fields, MonoSubtreeView, \
     append_view, create_readonly_iter, get_field_val_repr, pop_and_summarize
 from remerkleable.readonly_iters import BitfieldIter, NodeIter
@@ -16,17 +21,17 @@ from remerkleable.tree import Gindex, Node, PairNode, subtree_fill_to_contents, 
 V = TypeVar('V', bound=View)
 
 
-def subtree_fill_progressive(nodes: PyList[Node], depth=0) -> Node:
+def subtree_fill_progressive(nodes: Sequence[Node], depth: int = 0) -> Node:
     if len(nodes) == 0:
         return zero_node(0)
     base_size = 1 << depth
     return PairNode(
         subtree_fill_progressive(nodes[base_size:], depth + 2),
-        subtree_fill_to_contents(nodes[:base_size], depth),
+        subtree_fill_to_contents(nodes[:base_size], depth),  # type: ignore
     )
 
 
-def readonly_iter_progressive(backing: Node, length: int, elem_type: Type[View], is_packed: bool):
+def readonly_iter_progressive(backing: Node, length: int, elem_type: Type[View], is_packed: bool) -> Iterator[View]:
     yield from []
     tree_depth = 0
     while length > 0:
@@ -45,7 +50,7 @@ def to_gindex_progressive(chunk_i: int) -> Tuple[Gindex, int, int]:
     while True:
         base_size = 1 << depth
         if chunk_i < base_size:
-            return (((gindex << 1) + 1) << depth) + chunk_i, depth, chunk_i
+            return Gindex((((gindex << 1) + 1) << depth) + chunk_i), depth, chunk_i
         chunk_i -= base_size
         depth += 2
         gindex <<= 1
@@ -60,7 +65,7 @@ def to_target_progressive(i: int, elems_per_chunk: int = 1) -> Tuple[Gindex, int
     target = LEFT_GINDEX
     d = 0
     while d < depth:
-        target <<= 1
+        target = Gindex(target << 1)
         d += 2
 
     return target, d, i
@@ -109,7 +114,7 @@ class ProgressiveList(MonoSubtreeView):
         backing = PairNode(contents, uint256(len(input_views)).get_backing())
         return super().__new__(cls, backing=backing, hook=hook, **kwargs)
 
-    def __class_getitem__(cls, element_type) -> Type['ProgressiveList']:
+    def __class_getitem__(cls, element_type: Type[View]) -> Type['ProgressiveList']:
         packed = isinstance(element_type, BasicView)
 
         class ProgressiveListView(ProgressiveList):
@@ -132,14 +137,14 @@ class ProgressiveList(MonoSubtreeView):
         if elem_cls.is_fixed_byte_length():
             return elem_cls.type_byte_length() * self.length()
         else:
-            return sum(OFFSET_BYTE_LENGTH + cast(View, el).value_byte_length() for el in iter(self))
+            return sum(OFFSET_BYTE_LENGTH + el.value_byte_length() for el in iter(self))
 
     @classmethod
     def chunk_to_gindex(cls, chunk_i: int) -> Gindex:
         gindex, _, _ = to_gindex_progressive(chunk_i)
         return gindex
 
-    def readonly_iter(self):
+    def readonly_iter(self) -> Iterator[View]:
         length = self.length()
         backing = self.get_backing().get_left()
 
@@ -162,11 +167,11 @@ class ProgressiveList(MonoSubtreeView):
         next_backing = self.get_backing()
         if i == 0:  # Create new subtree
             next_backing = next_backing.setter(gindex)(PairNode(zero_node(0), zero_node(d)))
-        gindex = (gindex << 1) + 1
+        gindex = Gindex((gindex << 1) + 1)
         next_backing = next_backing.setter(gindex)(append_view(
             next_backing.getter(gindex), d, i, v, elem_type, is_packed))
 
-        next_backing = next_backing.setter(3)(uint256(ll + 1).get_backing())
+        next_backing = next_backing.setter(RIGHT_GINDEX)(uint256(ll + 1).get_backing())
         self.set_backing(next_backing)
 
     def pop(self):
@@ -187,11 +192,11 @@ class ProgressiveList(MonoSubtreeView):
         if i == 0:  # Delete entire subtree
             next_backing = next_backing.setter(gindex)(zero_node(0))
         else:
-            gindex = (gindex << 1) + 1
+            gindex = Gindex((gindex << 1) + 1)
             next_backing = next_backing.setter(gindex)(pop_and_summarize(
                 next_backing.getter(gindex), d, i, elem_type, is_packed))
 
-        next_backing = next_backing.setter(3)(uint256(ll - 1).get_backing())
+        next_backing = next_backing.setter(RIGHT_GINDEX)(uint256(ll - 1).get_backing())
         self.set_backing(next_backing)
 
     def get(self, i: int) -> View:
@@ -209,6 +214,11 @@ class ProgressiveList(MonoSubtreeView):
     @classmethod
     def type_repr(cls) -> str:
         return f'ProgressiveList[{cls.element_cls().__name__}]'
+
+    @classmethod
+    @lru_cache(maxsize=None)
+    def type_tree_shape(cls) -> Any:
+        return ('l', cls.element_cls().type_tree_shape())
 
     @classmethod
     def is_valid_count(cls, count: int) -> bool:
@@ -256,7 +266,7 @@ class ProgressiveBitlist(BitsView):
             kwargs['backing'] = PairNode(contents, uint256(len(input_bits)).get_backing())
         return super().__new__(cls, **kwargs)
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[bool]:
         bitlen = self.length()
         if bitlen == 0:
             yield from []
@@ -274,6 +284,11 @@ class ProgressiveBitlist(BitsView):
     @classmethod
     def type_repr(cls) -> str:
         return f'ProgressiveBitlist'
+
+    @classmethod
+    @lru_cache(maxsize=None)
+    def type_tree_shape(cls) -> Any:
+        return 'l'
 
     @classmethod
     def min_byte_length(cls) -> int:
@@ -295,11 +310,11 @@ class ProgressiveBitlist(BitsView):
         next_backing = self.get_backing()
         if i == 0:  # Create new subtree
             next_backing = next_backing.setter(gindex)(PairNode(zero_node(0), zero_node(d)))
-        gindex = (gindex << 1) + 1
+        gindex = Gindex((gindex << 1) + 1)
         next_backing = next_backing.setter(gindex)(append_bit(
             next_backing.getter(gindex), d, i, v))
 
-        next_backing = next_backing.setter(3)(uint256(ll + 1).get_backing())
+        next_backing = next_backing.setter(RIGHT_GINDEX)(uint256(ll + 1).get_backing())
         self.set_backing(next_backing)
 
     def pop(self):
@@ -318,11 +333,11 @@ class ProgressiveBitlist(BitsView):
         if i == 0:  # Delete entire subtree
             next_backing = next_backing.setter(gindex)(zero_node(0))
         else:
-            gindex = (gindex << 1) + 1
+            gindex = Gindex((gindex << 1) + 1)
             next_backing = next_backing.setter(gindex)(pop_bit(
                 next_backing.getter(gindex), d, i))
 
-        next_backing = next_backing.setter(3)(uint256(ll - 1).get_backing())
+        next_backing = next_backing.setter(RIGHT_GINDEX)(uint256(ll - 1).get_backing())
         self.set_backing(next_backing)
 
     def value_byte_length(self) -> int:
@@ -346,7 +361,7 @@ class ProgressiveBitlist(BitsView):
     def serialize(self, stream: BinaryIO) -> int:
         bitlen = self.length()
         if bitlen == 0:
-            stream.write(b'\x01')  # empty bitlist still has a delimiting bit
+            _ = stream.write(b'\x01')  # empty bitlist still has a delimiting bit
             return 1
 
         byte_len = 0
@@ -360,7 +375,7 @@ class ProgressiveBitlist(BitsView):
         return byte_len
 
 
-def iter_progressive_container(backing: Node, active_fields: PyList[Literal[0, 1]], elem_types: PyList[Type[View]]):
+def iter_progressive_container(backing: Node, active_fields: Sequence[Literal[0, 1]], elem_types: Sequence[Type[View]]) -> Iterator[View]:
     yield from []
     tree_depth = 0
     node_index = 0
@@ -382,7 +397,7 @@ def iter_progressive_container(backing: Node, active_fields: PyList[Literal[0, 1
 
 
 class ProgressiveContainer(Container):
-    _active_fields: PyList[Literal[0, 1]]
+    _active_fields: Sequence[Literal[0, 1]]
     _field_indices: Dict[str, int]
     __slots__ = '_active_fields', '_field_indices'
 
@@ -391,10 +406,14 @@ class ProgressiveContainer(Container):
             raise TypeError(f'`active_fields` missing: `{cls.__name__}(ProgressiveContainer)`')
         cls._active_fields = kwargs.pop('_active_fields')
 
-    def __new__(cls, active_fields: PyList[Literal[0, 1]]):
+    def __new__(cls, active_fields: Sequence[Literal[0, 1]]):
         class ProgressiveContainerMeta(ViewMeta):
+            active_fields: Sequence[Literal[0, 1]] = []
+
             def __new__(cls, name, bases, dct):
-                return super().__new__(cls, name, bases, dct, _active_fields=active_fields)
+                return super().__new__(cls, name, bases, dct, _active_fields=cls.active_fields)
+
+        ProgressiveContainerMeta.active_fields = active_fields
 
         class ProgressiveContainerView(ProgressiveContainer, metaclass=ProgressiveContainerMeta):
             def __init_subclass__(cls, **kwargs):
@@ -437,15 +456,13 @@ class ProgressiveContainer(Container):
                     cls._field_indices[fkey] = field_index
                     field_index += 1
 
-            def __new__(cls, *args, backing: Optional[Node] = None, hook: Optional[ViewHook] = None, **kwargs):
-                if len(args) > 0:
-                    raise Exception('use keyword arguments, positional arguments not supported')
+            def __new__(cls, *, backing: Optional[Node] = None, hook: Optional[ViewHook] = None, **kwargs):
                 if backing is not None:
                     if len(kwargs) != 0:
                         raise Exception('cannot have both a backing and elements to init fields')
                     return Container.__new__(cls, backing=backing, hook=hook, **kwargs)
 
-                input_nodes = []
+                input_nodes: Sequence[Node] = []
                 field_index = 0
                 for fkey, ftyp in cls.fields().items():
                     while active_fields[field_index] == 0:
@@ -466,10 +483,11 @@ class ProgressiveContainer(Container):
 
                 backing = PairNode(
                     subtree_fill_progressive(input_nodes),
-                    Bitvector[256](active_fields + [0] * (256 - len(active_fields))).get_backing(),
+                    Bitvector[256](list(active_fields) + [0] * (256 - len(active_fields))).get_backing(),
                 )
                 return Container.__new__(cls, backing=backing, hook=hook, **kwargs)
 
+        ProgressiveContainerView.__name__ = ProgressiveContainerView.type_repr()
         return ProgressiveContainerView
 
     @classmethod
@@ -490,7 +508,7 @@ class ProgressiveContainer(Container):
     @classmethod
     def default_node(cls) -> Node:
         active_fields = cls._active_fields
-        input_nodes = []
+        input_nodes: Sequence[Node] = []
         field_index = 0
         for ftyp in cls.fields().values():
             while active_fields[field_index] == 0:
@@ -500,7 +518,7 @@ class ProgressiveContainer(Container):
             field_index += 1
         return PairNode(
             subtree_fill_progressive(input_nodes),
-            Bitvector[256](active_fields + [0] * (256 - len(active_fields))).get_backing(),
+            Bitvector[256](list(active_fields) + [0] * (256 - len(active_fields))).get_backing(),
         )
 
     def active_fields(self) -> Bitvector[256]:
@@ -527,7 +545,12 @@ class ProgressiveContainer(Container):
     def type_repr(cls) -> str:
         active_fields = cls._active_fields
         return f'{cls.__name__}(ProgressiveContainer(active_fields={active_fields})):\n' + '\n'.join(
-            ('    ' + fkey + ': ' + ftype.__name__) for fkey, ftype in cls.fields().items())
+            f'    {fkey}: {ftype}' for fkey, ftype in cls.fields().items())
+
+    @classmethod
+    @lru_cache(maxsize=None)
+    def type_tree_shape(cls) -> Any:
+        return tuple((cls._field_indices[fkey], fkey, ftype.type_tree_shape()) for fkey, ftype in cls.fields().items())
 
     @classmethod
     def navigate_type(cls, key: Any) -> Type[View]:
@@ -541,3 +564,276 @@ class ProgressiveContainer(Container):
             return RIGHT_GINDEX
         field_index = cls._field_indices[key]
         return cls.chunk_to_gindex(field_index)
+
+
+@lru_cache(maxsize=None)
+def merge_shapes(shapes: frozenset) -> Any:
+    basic_or_bits = 1
+    sequence_or_union = 2
+    container = 3
+    progressive_container = 4
+
+    def classify(shape: Any) -> int:
+        if not isinstance(shape, tuple):
+            return basic_or_bits
+        if not isinstance(shape[0], tuple):
+            return sequence_or_union
+        if len(shape[0]) == 2:
+            return container
+        assert len(shape[0]) == 3
+        return progressive_container
+
+    def incompatible() -> TypeError:
+        raise TypeError('Type options must have compatible Merkleization')
+
+    shapes = iter(shapes)
+    first = next(shapes)
+    kind = classify(first)
+
+    # Basic, Bitlist, Bitvector, ProgressiveBitlist, ProgressiveBitvector
+    if kind == basic_or_bits:
+        for shape in shapes:
+            if shape != first:
+                raise incompatible()
+        return first
+
+    # List, Vector, ProgressiveList, CompatibleUnion
+    if kind == sequence_or_union:
+        seq_typ, elem_types = first[0], {first[1],}
+        for shape in shapes:
+            if classify(shape) != kind:
+                raise incompatible()
+            if shape[0] != seq_typ:
+                raise incompatible()
+            elem_types.add(shape[1])
+        return (seq_typ, merge_shapes(frozenset(elem_types)))
+
+    # Container
+    if kind == container:
+        ftypes = [{field[1],} for field in first]
+        for shape in shapes:
+            if classify(shape) != kind:
+                raise incompatible()
+            if len(shape) != len(first):
+                raise incompatible()
+            for i, field in enumerate(shape):
+                if field[0] != first[i][0]:
+                    raise incompatible()
+                ftypes[i].add(field[1])
+        return tuple((first[i][0], merge_shapes(frozenset(ftypes))) for i, ftypes in enumerate(ftypes))
+
+    # ProgressiveContainer
+    assert kind == progressive_container
+    keys = {field_index: fkey for field_index, fkey, _ in first}
+    field_indices = {fkey: field_index for field_index, fkey, _ in first}
+    ftypes = defaultdict(set, {field_index: {ftype,} for field_index, _, ftype in first})
+    for shape in shapes:
+        if classify(shape) != kind:
+            raise incompatible()
+        for field in shape:
+            field_index, fkey, ftype = field
+            if keys.setdefault(field_index, fkey) != fkey:
+                raise incompatible()
+            if field_indices.setdefault(fkey, field_index) != field_index:
+                raise incompatible()
+            ftypes[field_index].add(ftype)
+    return tuple((i, keys[i], merge_shapes(frozenset(ftypes))) for i, ftypes in sorted(ftypes.items()))
+
+
+U = TypeVar('U', bound='CompatibleUnion')
+
+
+class CompatibleUnion(BackedView):
+    _union_options: Dict[uint8, Type[View]]
+    __slots__ = '_union_options'
+
+    def __init_subclass__(cls, **kwargs: Any):
+        if '_union_options' not in kwargs:
+            raise TypeError(f'Type options missing: `{cls.__name__}(CompatibleUnion)`')
+        cls._union_options = kwargs.pop('_union_options')
+        _ = cls.type_tree_shape()  # Check compatibility across type options
+
+    def __new__(cls, union_options: Dict[int, Type[View]]):
+        if not all(1 <= selector <= 127 for selector in union_options):
+            raise TypeError(
+                f'Type options invalid: '
+                f'`CompatibleUnion({union_options})`')
+        if len(union_options) == 0:
+            raise TypeError(
+                f'Type options cannot be empty: '
+                f'`CompatibleUnion({union_options})`')
+        for option in union_options.values():
+            if not isinstance(option, View):
+                raise TypeError(
+                    f'`{option}` is not a `View`: '
+                    f'`CompatibleUnion({union_options})`')
+
+        class CompatibleUnionMeta(ViewMeta):
+            union_options: Dict[uint8, Type[View]] = {}
+
+            def __new__(cls, name, bases, dct):
+                return super().__new__(cls, name, bases, dct, _union_options=cls.union_options)
+
+        CompatibleUnionMeta.union_options = {uint8(selector): typ for selector, typ in union_options.items()}
+
+        class CompatibleUnionView(CompatibleUnion, metaclass=CompatibleUnionMeta):
+            def __new__(cls, selector: Optional[int] = None, data: Optional[Union[View, Any]] = None, *,
+                        backing: Optional[Node] = None, hook: Optional[ViewHook] = None, **kwargs):
+                if backing is not None:
+                    if selector is not None or data is not None:
+                        raise Exception('cannot have both a backing and an element to init value')
+                    return BackedView.__new__(cls, backing=backing, hook=hook, **kwargs)
+
+                if selector is None:
+                    raise ValueError('`selector` argument missing')
+                selector = uint8(selector)
+                if not cls.is_valid_selector(selector):
+                    raise ValueError(f'`selector` argument {selector} unsupported')
+                selected_type = cls.options()[selector]
+
+                if data is not None:
+                    if isinstance(data, View):
+                        node = data.get_backing()
+                    else:
+                        node = selected_type.coerce_view(data).get_backing()
+                else:
+                    node = selected_type.default_node()
+                backing = PairNode(node, uint8(selector).get_backing())
+                return BackedView.__new__(cls, backing=backing, hook=hook, **kwargs)
+
+        CompatibleUnionView.__name__ = CompatibleUnionView.type_repr()
+        return CompatibleUnionView
+
+    @classmethod
+    def options(cls) -> Dict[uint8, Type[View]]:
+        return cls._union_options
+
+    def selector(self) -> uint8:
+        return uint8.view_from_backing(self.get_backing().get_right())
+
+    def selected_type(self) -> Type[View]:
+        return self.__class__.options()[self.selector()]
+
+    def data(self) -> View:
+        def handle_change(v: View) -> None:
+            _ = self.get_backing().setter(LEFT_GINDEX)(v.get_backing())
+
+        return self.selected_type().view_from_backing(super().get_backing().get_left(), handle_change)
+
+    def value_byte_length(self) -> int:
+        return 1 + self.data().value_byte_length()
+
+    def change(self, selector: int, data: Optional[Union[View, Any]] = None):
+        selector = uint8(selector)
+        if not self.__class__.is_valid_selector(selector):
+            raise ValueError(f'`selector` argument {selector} unsupported')
+        selected_type = self.__class__.options()[selector]
+
+        if data is not None:
+            if isinstance(data, View):
+                node = data.get_backing()
+            else:
+                node = selected_type.coerce_view(data).get_backing()
+        else:
+            node = selected_type.default_node()
+        self.set_backing(PairNode(node, uint8(selector).get_backing()))
+
+    def __repr__(self):
+        data_repr = repr(self.data())
+        if '\n' in data_repr:
+            data_repr = indent(data_repr, '  ').strip()
+        return f'{self.__class__.type_repr()}:\n  selector: {self.selector()}\n  data: {data_repr}'
+
+    @classmethod
+    def type_repr(cls) -> str:
+        return 'CompatibleUnion({\n' + ',\n'.join(
+            [indent(f'{selector}: {typ.type_repr()}', '    ') for selector, typ in cls.options().items()]) + '})'
+
+    @classmethod
+    @lru_cache(maxsize=None)
+    def type_tree_shape(cls) -> Any:
+        return ('u', merge_shapes(frozenset({option.type_tree_shape() for option in cls.options().values()})))
+
+    @classmethod
+    def is_packed(cls) -> bool:
+        return False
+
+    @classmethod
+    def is_valid_selector(cls, selector: uint8) -> bool:
+        return selector in cls.options()
+
+    @classmethod
+    def navigate_type(cls, key: Any) -> Type[View]:
+        if key == '__selector__':
+            return uint8
+        if not cls.is_valid_selector(key):
+            raise KeyError
+        return cls.options()[key]
+
+    @classmethod
+    def key_to_static_gindex(cls, key: Any) -> Gindex:
+        if key == '__selector__':
+            return RIGHT_GINDEX
+        if not cls.is_valid_selector(uint8(key)):
+            raise KeyError(f'key {key} is not a valid selector for compatible union {repr(cls)}')
+        return LEFT_GINDEX
+
+    @classmethod
+    def coerce_view(cls: Type[U], v: Any) -> U:
+        raise AttributeError('Compatible unions cannot coerce other types')
+
+    @classmethod
+    def default_node(cls) -> Node:
+        raise AttributeError('Compatible unions do not have a default node')
+
+    @classmethod
+    def is_fixed_byte_length(cls) -> bool:
+        return False
+
+    @classmethod
+    def min_byte_length(cls) -> int:
+        return 1 + min([x.min_byte_length() for x in cls.options().values()])
+
+    @classmethod
+    def max_byte_length(cls) -> int:
+        return 1 + min([x.max_byte_length() for x in cls.options().values()])
+
+    @classmethod
+    def from_obj(cls: Type[U], obj: ObjType) -> U:
+        if not isinstance(obj, dict):
+            raise ValueError('expected dict with `selector` and `data` keys')
+        selector = uint8.from_obj(obj['selector'])
+        selected_type = cls.options()[selector]
+        data = selected_type.from_obj(obj['data'])
+        return cls(selector=selector, data=data)  # type: ignore
+
+    def to_obj(self) -> ObjType:
+        return {'selector': self.selector().to_obj(), 'data': self.data().to_obj()}
+
+    def encode_bytes(self) -> bytes:
+        stream = io.BytesIO()
+        _ = self.serialize(stream)
+        _ = stream.seek(0)
+        return stream.read()
+
+    @classmethod
+    def decode_bytes(cls: Type[U], bytez: bytes) -> U:
+        stream = io.BytesIO()
+        _ = stream.write(bytez)
+        _ = stream.seek(0)
+        return cls.deserialize(stream, len(bytez))
+
+    @classmethod
+    def deserialize(cls: Type[U], stream: BinaryIO, scope: int) -> U:
+        if scope < 1:
+            raise ValueError('scope too small, cannot read CompatibleUnion selector')
+        selector = uint8.from_bytes(stream.read(1), byteorder='little')
+        if not cls.is_valid_selector(selector):
+            raise ValueError(f'selected index {selector} unsupported')
+        selected_type = cls.options()[selector]
+        data = selected_type.deserialize(stream, scope - 1)
+        return cls(selector=selector, data=data)  # type: ignore
+
+    def serialize(self, stream: BinaryIO) -> int:
+        _ = stream.write(self.selector().to_bytes(length=1, byteorder='little'))
+        return 1 + self.data().serialize(stream)

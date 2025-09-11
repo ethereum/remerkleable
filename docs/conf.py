@@ -1,4 +1,4 @@
-from pallets_sphinx_themes import get_version
+from pallets_sphinx_themes import get_version  # type: ignore
 from pallets_sphinx_themes import ProjectLink
 
 # -- Project information -----------------------------------------------------

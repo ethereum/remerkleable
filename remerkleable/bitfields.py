@@ -1,3 +1,4 @@
+from functools import lru_cache
 from typing import cast, BinaryIO, List as PyList, Any, Tuple, TypeVar, Type
 from types import GeneratorType
 from collections.abc import Sequence as ColSequence
@@ -18,7 +19,7 @@ def _new_chunk_with_bit(chunk: Node, i: int, v: boolean) -> Node:
         new_chunk_root[(i & 0xff) >> 3] |= 1 << (i & 0x7)
     else:
         new_chunk_root[(i & 0xff) >> 3] &= (~(1 << (i & 0x7))) & 0xff
-    return RootNode(Root(new_chunk_root))
+    return RootNode(Root(bytes(new_chunk_root)))
 
 
 def deserialize_bits(stream: BinaryIO, scope: int, with_delimiting_bit: bool = False) -> Tuple[PyList[Node], int]:
@@ -110,7 +111,7 @@ def pop_bit(backing: Node, tree_depth: int, i: int) -> Node:
         # summarize to the highest node possible.
         # I.e. the resulting target must be a right-hand, unless it's the only content node.
         while (target & 1) == 0 and target != 0b10:
-            target >>= 1
+            target = Gindex(target >> 1)
         summary_fn = next_backing.summarize_into(target)
         next_backing = summary_fn()
 
@@ -263,6 +264,11 @@ class Bitlist(BitsView):
     @classmethod
     def type_repr(cls) -> str:
         return f"Bitlist[{cls.limit()}]"
+
+    @classmethod
+    @lru_cache(maxsize=None)
+    def type_tree_shape(cls) -> Any:
+        return f"l{cls.limit()}"
 
     @classmethod
     def is_fixed_byte_length(cls) -> bool:
@@ -430,6 +436,11 @@ class Bitvector(BitsView, FixedByteLengthViewHelper):
     @classmethod
     def type_repr(cls) -> str:
         return f"Bitvector[{cls.vector_length()}]"
+
+    @classmethod
+    @lru_cache(maxsize=None)
+    def type_tree_shape(cls) -> Any:
+        return f"v{cls.vector_length()}"
 
     @classmethod
     def type_byte_length(cls) -> int:

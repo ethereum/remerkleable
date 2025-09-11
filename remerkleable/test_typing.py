@@ -2,7 +2,7 @@
 
 import pytest  # type: ignore
 
-from typing import Optional, Type
+from typing import Any, Dict, Optional, Type
 from random import Random
 
 from remerkleable.complex import Container, Vector, List
@@ -11,7 +11,7 @@ from remerkleable.basic import boolean, bit, uint, byte, uint8, uint16, uint32, 
 from remerkleable.bitfields import Bitvector, Bitlist
 from remerkleable.byte_arrays import ByteVector, Bytes1, Bytes4, Bytes8, Bytes32, Bytes48, Bytes96
 from remerkleable.core import BasicView, View
-from remerkleable.progressive import ProgressiveBitlist, ProgressiveContainer, ProgressiveList
+from remerkleable.progressive import CompatibleUnion, ProgressiveBitlist, ProgressiveContainer, ProgressiveList
 from remerkleable.stable_container import Profile, StableContainer
 from remerkleable.union import Union
 from remerkleable.tree import get_depth, merkle_hash, LEFT_GINDEX, RIGHT_GINDEX
@@ -714,6 +714,150 @@ def test_container_inheritance():
     efcb = ExtendedFancyChocoBar(a=0xaabbccdd11223344, b=0x55667788, c=0xaf,
                                  aa=0x0102030405060708a1a2a3a4a5a6a7a8, more=0xe1e2)
     assert efcb.encode_bytes().hex() == "44332211ddccbbaa88776655afa8a7a6a5a4a3a2a10807060504030201e2e1"
+
+
+def test_compatible_union():
+    assert bit.type_tree_shape() == 1
+    assert boolean.type_tree_shape() == 1
+    assert byte.type_tree_shape() == 8
+    assert uint8.type_tree_shape() == 8
+    assert uint16.type_tree_shape() == 16
+    assert uint32.type_tree_shape() == 32
+    assert uint64.type_tree_shape() == 64
+    assert uint128.type_tree_shape() == 128
+    assert uint256.type_tree_shape() == 256
+    assert Bitlist[42].type_tree_shape() == 'l42'
+    assert Bitvector[42].type_tree_shape() == 'v42'
+    assert ProgressiveBitlist.type_tree_shape() == 'l'
+    assert List[bit, 42].type_tree_shape() == ('l42', 1)
+    assert Vector[bit, 42].type_tree_shape() == ('v42', 1)
+    assert ProgressiveList[bit].type_tree_shape() == ('l', 1)
+    assert List[uint64, 128].type_tree_shape() == ('l128', 64)
+    assert Vector[uint16, 123].type_tree_shape() == ('v123', 16)
+    assert ProgressiveList[uint256].type_tree_shape() == ('l', 256)
+
+    class Foo(Container):
+        a: uint8
+        b: uint32
+
+    assert Foo.type_tree_shape() == (('a', 8), ('b', 32))
+
+    class Square(ProgressiveContainer(active_fields=[1, 0, 1])):
+        side: uint16
+        color: uint8
+
+    class Circle(ProgressiveContainer(active_fields=[0, 1, 1])):
+        radius: uint16
+        color: uint8
+
+    Shape = CompatibleUnion({1: Square, 2: Circle})
+
+    assert Square.type_tree_shape() == ((0, 'side', 16), (2, 'color', 8))
+    assert Circle.type_tree_shape() == ((1, 'radius', 16), (2, 'color', 8))
+    assert Shape.type_tree_shape() == ('u', ((0, 'side', 16), (1, 'radius', 16), (2, 'color', 8)))
+
+    class SquareContainer(Container):
+        shape: Square
+
+    class CircleContainer(Container):
+        shape: Circle
+
+    class ShapeContainer(Container):
+        shape: Shape  # type: ignore
+
+    ShapeContainerUnion = CompatibleUnion({1: SquareContainer, 2: CircleContainer})
+
+    assert SquareContainer.type_tree_shape() == (('shape', ((0, 'side', 16), (2, 'color', 8))),)
+    assert CircleContainer.type_tree_shape() == (('shape', ((1, 'radius', 16), (2, 'color', 8))),)
+    assert ShapeContainer.type_tree_shape() == (('shape', ('u', ((0, 'side', 16), (1, 'radius', 16), (2, 'color', 8)))),)
+    assert ShapeContainerUnion.type_tree_shape() == ('u', (('shape', ((0, 'side', 16), (1, 'radius', 16), (2, 'color', 8))),))
+
+    # Reject incompatible Merkleization
+    try:
+        _ = CompatibleUnion({1: SquareContainer, 2: CircleContainer, 3: Circle})
+        assert False
+    except TypeError:
+        pass
+    try:
+        _ = CompatibleUnion({1: SquareContainer, 2: CircleContainer, 3: ShapeContainerUnion})
+        assert False
+    except TypeError:
+        pass
+    try:
+        _ = CompatibleUnion({1: ShapeContainer, 2: ShapeContainerUnion})
+        assert False
+    except TypeError:
+        pass
+
+    class JustColor(ProgressiveContainer(active_fields=[0, 0, 1])):
+        color: uint8
+
+    assert JustColor.type_tree_shape() == ((2, 'color', 8),)
+
+    ColorUnion = CompatibleUnion({1: Square, 2: Circle, 3: JustColor})
+
+    assert ColorUnion.type_tree_shape() == ('u', ((0, 'side', 16), (1, 'radius', 16), (2, 'color', 8)))
+
+    class ColorContainer(Container):
+        shape: JustColor
+
+    ColorContainerUnion = CompatibleUnion({1: ColorContainer})
+    FullUnion = CompatibleUnion({1: ColorContainerUnion, 2: ShapeContainerUnion})
+
+    assert ColorContainerUnion.type_tree_shape() == ('u', (('shape', ((2, 'color', 8),)),))
+    assert FullUnion.type_tree_shape() == ('u', ('u', (('shape', ((0, 'side', 16), (1, 'radius', 16), (2, 'color', 8))),)))
+
+    ShapeList = ProgressiveList[Shape]
+    ShapeListUnion = CompatibleUnion({1: ProgressiveList[Square], 2: ProgressiveList[Circle]})
+
+    assert ShapeList.type_tree_shape() == ('l', ('u', ((0, 'side', 16), (1, 'radius', 16), (2, 'color', 8))))
+    assert ShapeListUnion.type_tree_shape() == ('u', ('l', ((0, 'side', 16), (1, 'radius', 16), (2, 'color', 8))))
+
+    try:
+        _ = CompatibleUnion({1: ProgressiveList[Square], 2: Circle})
+        assert False
+    except TypeError:
+        pass
+    try:
+        _ = CompatibleUnion({1: ProgressiveList[Square], 2: List[Circle, 123]})
+        assert False
+    except TypeError:
+        pass
+    try:
+        _ = CompatibleUnion({1: ProgressiveList[Square], 2: ProgressiveList[Shape]})
+        assert False
+    except TypeError:
+        pass
+
+    square = Shape(selector=1, data=Square())
+    assert square.hash_tree_root() == merkle_hash(Square().hash_tree_root(), uint8(1).hash_tree_root())
+    assert square.data() == Square()
+    assert square.selector() == 1
+    assert square.selected_type() == Square
+
+    circle = Shape(selector=2, data=Circle())
+    assert circle.data() == Circle()
+    assert circle.selector() == 2
+    assert circle.selected_type() == Circle
+
+    shape = Shape(selector=1)
+    shape.change(selector=2, data=Circle(radius=5))
+    assert shape.data() == Circle(radius=5)
+    assert shape.selector() == 2
+    assert shape.selected_type() == Circle
+
+    data: Dict[Any, Any] = {'selector': 2, 'data': {'color': 0, 'radius': 5}}
+    assert shape.to_obj() == data
+
+    loaded = Shape.from_obj(data)
+    assert loaded.data() == Circle(radius=5)
+    assert loaded.selector() == 2
+    assert loaded.selected_type() == Circle
+    assert loaded == shape
+
+    assert Shape.key_to_static_gindex('__selector__') == RIGHT_GINDEX
+    assert Shape.key_to_static_gindex(1) == LEFT_GINDEX
+    assert Shape.key_to_static_gindex(2) == LEFT_GINDEX
 
 
 def test_union():
