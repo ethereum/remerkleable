@@ -16,7 +16,8 @@ from remerkleable.core import BackedView, BasicView, ObjType, View, ViewHook, Vi
 from remerkleable.complex import Container, Fields, MonoSubtreeView, \
     append_view, create_readonly_iter, get_field_val_repr, pop_and_summarize
 from remerkleable.readonly_iters import BitfieldIter, NodeIter
-from remerkleable.tree import Gindex, Node, PairNode, subtree_fill_to_contents, zero_node, LEFT_GINDEX, RIGHT_GINDEX
+from remerkleable.tree import Gindex, NavigationError, Node, PairNode, \
+    subtree_fill_to_contents, zero_node, LEFT_GINDEX, RIGHT_GINDEX
 
 V = TypeVar('V', bound=View)
 
@@ -211,6 +212,13 @@ class ProgressiveList(MonoSubtreeView):
             raise IndexError
         super().set(i, v)
 
+    def __repr__(self):
+        return self._repr_sequence()
+
+    @classmethod
+    def default_node(cls) -> Node:
+        return PairNode(zero_node(0), zero_node(0))  # mix-in 0 as list length
+
     @classmethod
     def type_repr(cls) -> str:
         return f'ProgressiveList[{cls.element_cls().__name__}]'
@@ -339,6 +347,17 @@ class ProgressiveBitlist(BitsView):
 
         next_backing = next_backing.setter(RIGHT_GINDEX)(uint256(ll - 1).get_backing())
         self.set_backing(next_backing)
+
+    def __repr__(self):
+        try:
+            length = self.length()
+        except NavigationError:
+            return f"{self.__class__.type_repr()}~partial"
+        try:
+            bitstr = ''.join('1' if self.get(i) else '0' for i in range(length))
+        except NavigationError:
+            bitstr = " *partial bits* "
+        return f"{self.__class__.type_repr()}({length} bits: {bitstr})"
 
     def value_byte_length(self) -> int:
         # bit count in bytes rounded up + delimiting bit
