@@ -141,7 +141,7 @@ class BitsView(BackedView, ColSequence):
         ll = self.length()
         i = int(i)  # coerce to int, access type can have stricter bit operation typing than necessary.
         if i >= ll:
-            raise NavigationError(f"cannot get bit {i} in bits of length {ll}")
+            raise IndexError(f"cannot get bit {i} in bits of length {ll}")
         chunk_i = i >> 8
         chunk = self.get_backing().getter(self.chunk_to_gindex(chunk_i))
         chunk_byte = chunk.root[(i & 0xff) >> 3]
@@ -151,7 +151,7 @@ class BitsView(BackedView, ColSequence):
         ll = self.length()
         i = int(i)  # coerce to int, access type can have stricter bit operation typing than necessary.
         if i >= ll:
-            raise NavigationError(f"cannot set bit {i} in bits of length {ll}")
+            raise IndexError(f"cannot set bit {i} in bits of length {ll}")
         chunk_i = i >> 8
         chunk_setter_link: Link = self.get_backing().setter(self.chunk_to_gindex(chunk_i))
         chunk = self.get_backing().getter(self.chunk_to_gindex(chunk_i))
@@ -319,19 +319,13 @@ class Bitlist(BitsView):
     def get(self, i: int) -> boolean:
         if i < 0 or i >= self.length():
             raise IndexError
-        try:
-            return super().get(i)
-        except NavigationError:
-            raise IndexError
+        return super().get(i)
 
     def set(self, i: int, v: boolean) -> None:
         if i < 0 or i >= self.length():
             raise IndexError
-        try:
-            super().set(i, v)
-        except NavigationError:
-            raise IndexError
-
+        super().set(i, v)
+        
     def __repr__(self):
         try:
             length = self.length()
