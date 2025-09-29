@@ -203,6 +203,8 @@ class uint(int, BasicView):
 
     @classmethod
     def decode_bytes(cls: Type[T], bytez: bytes) -> T:
+        if len(bytez) != cls.type_byte_length():
+            raise ValueError(f"invalid {cls.type_repr()} '0x{bytez.hex()}'")
         return cls(int.from_bytes(bytez, byteorder=ENDIANNESS))
 
     def encode_bytes(self) -> bytes:
@@ -214,7 +216,7 @@ class uint(int, BasicView):
             raise ObjParseException(f"obj '{obj}' is not an int or str")
         if isinstance(obj, str):
             if obj.startswith('0x'):
-                return cls.decode_bytes(bytes.fromhex(obj[2:]))
+                return cls.decode_bytes(bytes.fromhex(obj[2:]).ljust(cls.type_byte_length(), b"\x00"))
             obj = int(obj)
         return cls(obj)
 

@@ -379,6 +379,21 @@ def test_boolean():
             pass
 
 
+@pytest.mark.parametrize("typ", [uint8, uint16, uint32, uint64, uint128, uint256, byte])  # type: ignore
+def test_uint(typ: Type[View]):
+    rng = Random(123)
+    for i in range(0, 75):
+        bytez = bytes(rng.getrandbits(8) for _ in range(i))
+        if i == typ.type_byte_length():
+            assert typ.decode_bytes(bytez).encode_bytes() == bytez
+        else:
+            try:
+                _ = typ.decode_bytes(bytez)
+                assert False
+            except ValueError:
+                pass
+
+
 def test_uint_math():
     assert uint8(0) + uint8(uint32(16)) == uint8(16)  # allow explicit casting to make invalid addition valid
 
