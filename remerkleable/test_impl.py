@@ -1188,6 +1188,14 @@ def test_readonly_iters(name: str, typ: Type[View], value: View, serialized: str
         assert fields == expected
 
 
+def test_container_invalid():
+    try:
+        _ = SmallTestStruct.decode_bytes(bytes.fromhex("a7e1d33b00"))
+        assert False
+    except ValueError:
+        pass
+
+
 @pytest.mark.parametrize("base_typs", [
     (Container, Container),
     (ProgressiveContainer(active_fields=[1, 1, 1]), ProgressiveContainer(active_fields=[1, 1, 1, 1])),
