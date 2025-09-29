@@ -54,7 +54,11 @@ class boolean(int, BasicView):
 
     @classmethod
     def decode_bytes(cls: Type[BoolV], bytez: bytes) -> BoolV:
-        return cls(bytez != b"\x00")
+        if bytez == b"\x00":
+            return cls(0)
+        if bytez == b"\x01":
+            return cls(1)
+        raise ValueError(f"invalid bool '0x{bytez.hex()}'")
 
     @classmethod
     def from_obj(cls: Type[BoolV], obj: ObjType) -> BoolV:
