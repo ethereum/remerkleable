@@ -367,6 +367,18 @@ def test_bytesn_subclass():
     assert len(Bytes32() + Bytes48()) == 80
 
 
+def test_boolean():
+    assert boolean.decode_bytes(b"\x00") == boolean(0)
+    assert boolean.decode_bytes(b"\x01") == boolean(1)
+
+    for v in (b"", b"\x02", b"\x10", b"\x80", b"\xff", b"\x00\x00"):
+        try:
+            _ = boolean.decode_bytes(v)
+            assert False
+        except ValueError:
+            pass
+
+
 def test_uint_math():
     assert uint8(0) + uint8(uint32(16)) == uint8(16)  # allow explicit casting to make invalid addition valid
 
