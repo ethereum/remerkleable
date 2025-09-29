@@ -929,6 +929,8 @@ class Container(_ContainerBase):
         fields = cls.fields()
         field_values: Dict[str, View]
         if cls.is_fixed_byte_length():
+            if scope != cls.type_byte_length():
+                raise ValueError(f"invalid {cls.type_repr()} size: {scope}")
             field_values = {fkey: ftyp.deserialize(stream, ftyp.type_byte_length()) for fkey, ftyp in fields.items()}
         else:
             field_values = {}
