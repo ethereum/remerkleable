@@ -1,3 +1,4 @@
+from functools import lru_cache
 from typing import Optional, Any, TypeVar, Type, BinaryIO
 from types import GeneratorType
 from remerkleable.tree import Node, RootNode, Root, subtree_fill_to_contents, get_depth, to_gindex, \
@@ -114,6 +115,11 @@ class ByteVector(RawBytesView, FixedByteLengthViewHelper, View):
         return f"ByteVector[{cls.vector_length()}]"
 
     @classmethod
+    @lru_cache(maxsize=None)
+    def type_tree_shape(cls) -> Any:
+        return (f"v{cls.vector_length()}", byte.type_tree_shape())
+
+    @classmethod
     def view_from_backing(cls: Type[BV], node: Node, hook: Optional[ViewHook] = None) -> BV:
         depth = cls.tree_depth()
         byte_len = cls.vector_length()
@@ -198,6 +204,11 @@ class ByteList(RawBytesView, FixedByteLengthViewHelper, View):
     @classmethod
     def type_repr(cls) -> str:
         return f"ByteList[{cls.limit()}]"
+
+    @classmethod
+    @lru_cache(maxsize=None)
+    def type_tree_shape(cls) -> Any:
+        return (f"l{cls.limit()}", byte.type_tree_shape())
 
     @classmethod
     def view_from_backing(cls: Type[BL], node: Node, hook: Optional[ViewHook] = None) -> BL:

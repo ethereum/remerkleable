@@ -9,7 +9,7 @@ from typing import Any, BinaryIO, Dict, Iterator, Literal, Optional, Sequence, T
 from types import GeneratorType
 from textwrap import indent
 import io
-from remerkleable.basic import boolean, uint8, uint256
+from remerkleable.basic import boolean, byte, uint8, uint256
 from remerkleable.bitfields import BitsView, Bitvector, append_bit, deserialize_bits, pop_bit, serialize_bits
 from remerkleable.core import BackedView, BasicView, ObjType, View, ViewHook, ViewMeta, \
     OFFSET_BYTE_LENGTH, pack_bits_to_chunks
@@ -242,6 +242,10 @@ class ProgressiveList(MonoSubtreeView):
 
     def to_obj(self) -> ObjType:
         return list(el.to_obj() for el in self.readonly_iter())
+
+
+class ProgressiveByteList(ProgressiveList[byte]):
+    pass
 
 
 def iter_progressive_bitlist(backing: Node, bitlen: int) -> Iterator[Tuple[Node, int, int, bool]]:
