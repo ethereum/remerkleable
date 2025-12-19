@@ -130,11 +130,8 @@ def test_container():
         assert isinstance(x.b, uint32)
         assert x.__class__.is_fixed_byte_length()
 
-        try:
+        with pytest.raises(AttributeError, match=rf"The field names \[wrong_field_name\] are not defined in {typ}"):
             typ(wrong_field_name=100)
-            assert False
-        except AttributeError:
-            pass
 
     run_foo_test(Foo, Container)
     run_foo_test(ProgressiveFoo1, ProgressiveContainer)
@@ -174,23 +171,14 @@ def test_container():
         assert f_b == y.b
 
         y.a = 42
-        try:
+        with pytest.raises(ValueError, match="value out of bounds for <class 'remerkleable.basic.uint8'>"):
             y.a = 256  # out of bounds
-            assert False
-        except ValueError:
-            pass
 
-        try:
+        with pytest.raises(ValueError, match="value must have equal byte length to coerce it"):
             y.a = uint16(255)  # within bounds, wrong type
-            assert False
-        except ValueError:
-            pass
 
-        try:
+        with pytest.raises(AttributeError, match="unknown attribute not_here"):
             y.not_here = 5
-            assert False
-        except AttributeError:
-            pass
 
     run_bar_test(Bar)
     run_bar_test(ProgressiveBar1)
@@ -307,29 +295,17 @@ def test_list_2(typ: Type[View]):
         assert foo[i] == i
         assert foo.hash_tree_root() == typ.decode_bytes(foo.encode_bytes()).hash_tree_root()
 
-    try:
+    with pytest.raises(ValueError, match="value must have equal byte length to coerce it"):
         foo[3] = uint64(2 ** 32 - 1)  # within bounds, wrong type
-        assert False
-    except ValueError:
-        pass
 
-    try:
+    with pytest.raises(IndexError):
         foo[128] = 100
-        assert False
-    except IndexError:
-        pass
 
-    try:
+    with pytest.raises(IndexError):
         foo[-1] = 100  # valid in normal python lists
-        assert False
-    except IndexError:
-        pass
 
-    try:
+    with pytest.raises(IndexError):
         foo[128] = 100  # out of bounds
-        assert False
-    except IndexError:
-        pass
 
     assert foo.encode_bytes().hex() == (
         "0000000001000000020000000300000004000000050000000600000007000000"
@@ -372,11 +348,8 @@ def test_boolean():
     assert boolean.decode_bytes(b"\x01") == boolean(1)
 
     for v in (b"", b"\x02", b"\x10", b"\x80", b"\xff", b"\x00\x00"):
-        try:
+        with pytest.raises(ValueError, match=f"invalid bool '0x{v.hex()}'"):
             _ = boolean.decode_bytes(v)
-            assert False
-        except ValueError:
-            pass
 
 
 @pytest.mark.parametrize("typ", [uint8, uint16, uint32, uint64, uint128, uint256, byte])  # type: ignore
@@ -387,11 +360,8 @@ def test_uint(typ: Type[View]):
         if i == typ.type_byte_length():
             assert typ.decode_bytes(bytez).encode_bytes() == bytez
         else:
-            try:
+            with pytest.raises(ValueError, match=f"invalid {typ.type_repr()} '0x{bytez.hex()}'"):
                 _ = typ.decode_bytes(bytez)
-                assert False
-            except ValueError:
-                pass
 
 
 def test_uint_math():
@@ -479,19 +449,13 @@ def test_paths():
 
     assert (List[uint32, 123] / 0).navigate_type() == uint32
     assert (List[uint32, 123] / "__len__").navigate_type() == uint256
-    try:
+    with pytest.raises(KeyError):
         (List[uint32, 123] / 123).navigate_type()
-        assert False
-    except KeyError:
-        pass
 
     assert (Bitlist[123] / 0).navigate_type() == boolean
     assert (Bitlist[123] / "__len__").navigate_type() == uint256
-    try:
+    with pytest.raises(KeyError):
         (Bitlist[123] / 123).navigate_type()
-        assert False
-    except KeyError:
-        pass
 
     class Square(ProgressiveContainer(active_fields=[1, 0, 1])):
         side: uint16
@@ -508,11 +472,8 @@ def test_paths():
     assert (Square / 'side').gindex() == 0b101
     assert (Square / 'color').navigate_type() == uint8
     assert (Square / 'color').gindex() == 0b100101
-    try:
+    with pytest.raises(KeyError):
         (Square / 'radius').navigate_type()
-        assert False
-    except KeyError:
-        pass
 
     assert issubclass((Circle / '__active_fields__').navigate_type(), Bitvector)
     assert (Circle / '__active_fields__').navigate_type().vector_length() == 256
@@ -521,11 +482,8 @@ def test_paths():
     assert (Circle / 'radius').gindex() == 0b100100
     assert (Circle / 'color').navigate_type() == uint8
     assert (Circle / 'color').gindex() == 0b100101
-    try:
+    with pytest.raises(KeyError):
         (Circle / 'side').navigate_type()
-        assert False
-    except KeyError:
-        pass
 
 
 def test_bitvector():
@@ -746,21 +704,12 @@ def test_compatible_union():
     assert ShapeContainerUnion.type_tree_shape() == ('u', (('shape', ((0, 'side', 16), (1, 'radius', 16), (2, 'color', 8))),))
 
     # Reject incompatible Merkleization
-    try:
+    with pytest.raises(TypeError):
         _ = CompatibleUnion({1: SquareContainer, 2: CircleContainer, 3: Circle})
-        assert False
-    except TypeError:
-        pass
-    try:
+    with pytest.raises(TypeError):
         _ = CompatibleUnion({1: SquareContainer, 2: CircleContainer, 3: ShapeContainerUnion})
-        assert False
-    except TypeError:
-        pass
-    try:
+    with pytest.raises(TypeError):
         _ = CompatibleUnion({1: ShapeContainer, 2: ShapeContainerUnion})
-        assert False
-    except TypeError:
-        pass
 
     class JustColor(ProgressiveContainer(active_fields=[0, 0, 1])):
         color: uint8
@@ -786,21 +735,12 @@ def test_compatible_union():
     assert ShapeList.type_tree_shape() == ('l', ('u', ((0, 'side', 16), (1, 'radius', 16), (2, 'color', 8))))
     assert ShapeListUnion.type_tree_shape() == ('u', ('l', ((0, 'side', 16), (1, 'radius', 16), (2, 'color', 8))))
 
-    try:
+    with pytest.raises(TypeError):
         _ = CompatibleUnion({1: ProgressiveList[Square], 2: Circle})
-        assert False
-    except TypeError:
-        pass
-    try:
+    with pytest.raises(TypeError):
         _ = CompatibleUnion({1: ProgressiveList[Square], 2: List[Circle, 123]})
-        assert False
-    except TypeError:
-        pass
-    try:
+    with pytest.raises(TypeError):
         _ = CompatibleUnion({1: ProgressiveList[Square], 2: ProgressiveList[Shape]})
-        assert False
-    except TypeError:
-        pass
 
     square = Shape(selector=1, data=Square())
     assert square.hash_tree_root() == merkle_hash(Square().hash_tree_root(), uint8(1).hash_tree_root())
@@ -875,32 +815,20 @@ def test_union():
     assert bar.options() == list(max_opts)
 
     # No union with too many options
-    try:
+    with pytest.raises(TypeError, match="expected no more than 128 type options, but got 129"):
         bar = Union.__class_getitem__((uint16,) * 129)
-        assert False
-    except TypeError:
-        pass
 
     # No union with just a None option
-    try:
+    with pytest.raises(TypeError, match="Union with a None option must have at least 2 options"):
         bar = Union[None]
-        assert False
-    except TypeError:
-        pass
 
     # None type must always be the first option
-    try:
+    with pytest.raises(TypeError, match="only option 0 can be None as type, index 1 cannot be None"):
         bar = Union[uint32, None]
-        assert False
-    except TypeError:
-        pass
 
     # No more None types
-    try:
+    with pytest.raises(TypeError, match="only option 0 can be None as type, index 2 cannot be None"):
         bar = Union[None, uint16, None]
-        assert False
-    except TypeError:
-        pass
 
     data = {'selector': 2, 'value': '0x0123'}
     data_typ = Union[uint32, uint8, uint64]

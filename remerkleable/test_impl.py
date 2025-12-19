@@ -1177,11 +1177,8 @@ def test_readonly_iters(name: str, typ: Type[View], value: View, serialized: str
             got_elem = r_iter.__next__()
             assert expected_elem == got_elem
             i += 1
-        try:
+        with pytest.raises(StopIteration):
             r_iter.__next__()
-            assert False
-        except StopIteration:
-            pass
     if isinstance(value, Container) or isinstance(value, ProgressiveContainer):
         fields = list(value)
         expected = [getattr(value, fkey) for fkey in value.__class__.fields().keys()]
@@ -1189,11 +1186,8 @@ def test_readonly_iters(name: str, typ: Type[View], value: View, serialized: str
 
 
 def test_container_invalid():
-    try:
+    with pytest.raises(ValueError):
         _ = SmallTestStruct.decode_bytes(bytes.fromhex("a7e1d33b00"))
-        assert False
-    except ValueError:
-        pass
 
 
 @pytest.mark.parametrize("base_typs", [
