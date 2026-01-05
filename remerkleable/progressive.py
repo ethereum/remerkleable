@@ -815,11 +815,11 @@ class CompatibleUnion(BackedView):
 
     @classmethod
     def min_byte_length(cls) -> int:
-        return 1 + min([x.min_byte_length() for x in cls.options().values()])
+        return 1 + min(x.min_byte_length() for x in cls.options().values())
 
     @classmethod
     def max_byte_length(cls) -> int:
-        return 1 + min([x.max_byte_length() for x in cls.options().values()])
+        return 1 + max(x.max_byte_length() for x in cls.options().values())
 
     @classmethod
     def from_obj(cls: Type[U], obj: ObjType) -> U:
