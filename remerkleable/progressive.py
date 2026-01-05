@@ -515,7 +515,7 @@ class ProgressiveContainer(Container):
 
     @classmethod
     def fields(cls) -> Fields:
-        return cls.__dict__.get('__annotations__', {})
+        return cls.__annotations__
 
     @classmethod
     def tree_depth(cls) -> int:
