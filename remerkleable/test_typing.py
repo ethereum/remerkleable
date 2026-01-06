@@ -469,9 +469,9 @@ def test_paths():
     assert (Square / '__active_fields__').navigate_type().vector_length() == 256
     assert (Square / '__active_fields__').gindex() == 0b11
     assert (Square / 'side').navigate_type() == uint16
-    assert (Square / 'side').gindex() == 0b101
+    assert (Square / 'side').gindex() == 0b100
     assert (Square / 'color').navigate_type() == uint8
-    assert (Square / 'color').gindex() == 0b100101
+    assert (Square / 'color').gindex() == 0b101001
     with pytest.raises(KeyError):
         (Square / 'radius').navigate_type()
 
@@ -479,9 +479,9 @@ def test_paths():
     assert (Circle / '__active_fields__').navigate_type().vector_length() == 256
     assert (Circle / '__active_fields__').gindex() == 0b11
     assert (Circle / 'radius').navigate_type() == uint16
-    assert (Circle / 'radius').gindex() == 0b100100
+    assert (Circle / 'radius').gindex() == 0b101000
     assert (Circle / 'color').navigate_type() == uint8
-    assert (Circle / 'color').gindex() == 0b100101
+    assert (Circle / 'color').gindex() == 0b101001
     with pytest.raises(KeyError):
         (Circle / 'side').navigate_type()
 

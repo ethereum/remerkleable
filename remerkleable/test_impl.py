@@ -130,54 +130,54 @@ test_data = [
     ("progressiveBitlist empty", ProgressiveBitlist, ProgressiveBitlist(), "01", h(chunk(""), chunk("00")), "0x01"),
     ("bitvector TTFTFTFF", Bitvector[8], Bitvector[8](1, 1, 0, 1, 0, 1, 0, 0), "2b", chunk("2b"), "0x2b"),
     ("bitlist TTFTFTFF", Bitlist[8], Bitlist[8](1, 1, 0, 1, 0, 1, 0, 0), "2b01", h(chunk("2b"), chunk("08")), "0x2b01"),
-    ("progressiveBitlist TTFTFTFF", ProgressiveBitlist, ProgressiveBitlist(1, 1, 0, 1, 0, 1, 0, 0), "2b01", h(h(chunk(""), chunk("2b")), chunk("08")), "0x2b01"),
+    ("progressiveBitlist TTFTFTFF", ProgressiveBitlist, ProgressiveBitlist(1, 1, 0, 1, 0, 1, 0, 0), "2b01", h(h(chunk("2b"), chunk("")), chunk("08")), "0x2b01"),
     ("bitvector FTFT", Bitvector[4], Bitvector[4](0, 1, 0, 1), "0a", chunk("0a"), "0x0a"),
     ("bitlist FTFT", Bitlist[4], Bitlist[4](0, 1, 0, 1), "1a", h(chunk("0a"), chunk("04")), "0x1a"),
-    ("progressiveBitlist FTFT", ProgressiveBitlist, ProgressiveBitlist(0, 1, 0, 1), "1a", h(h(chunk(""), chunk("0a")), chunk("04")), "0x1a"),
+    ("progressiveBitlist FTFT", ProgressiveBitlist, ProgressiveBitlist(0, 1, 0, 1), "1a", h(h(chunk("0a"), chunk("")), chunk("04")), "0x1a"),
     ("bitvector FTF", Bitvector[3], Bitvector[3](0, 1, 0), "02", chunk("02"), "0x02"),
     ("bitlist FTF", Bitlist[3], Bitlist[3](0, 1, 0), "0a", h(chunk("02"), chunk("03")), "0x0a"),
-    ("progressiveBitlist FTF", ProgressiveBitlist, ProgressiveBitlist(0, 1, 0), "0a", h(h(chunk(""), chunk("02")), chunk("03")), "0x0a"),
+    ("progressiveBitlist FTF", ProgressiveBitlist, ProgressiveBitlist(0, 1, 0), "0a", h(h(chunk("02"), chunk("")), chunk("03")), "0x0a"),
     ("bitvector TFTFFFTTFT", Bitvector[10], Bitvector[10](1, 0, 1, 0, 0, 0, 1, 1, 0, 1),
      "c502", chunk("c502"), "0xc502"),
     ("bitlist TFTFFFTTFT", Bitlist[16], Bitlist[16](1, 0, 1, 0, 0, 0, 1, 1, 0, 1),
      "c506", h(chunk("c502"), chunk("0a")), "0xc506"),
     ("progressiveBitlist TFTFFFTTFT", ProgressiveBitlist, ProgressiveBitlist(1, 0, 1, 0, 0, 0, 1, 1, 0, 1),
-     "c506", h(h(chunk(""), chunk("c502")), chunk("0a")), "0xc506"),
+     "c506", h(h(chunk("c502"), chunk("")), chunk("0a")), "0xc506"),
     ("bitvector TFTFFFTTFTFFFFTT", Bitvector[16], Bitvector[16](1, 0, 1, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 1, 1),
      "c5c2", chunk("c5c2"), "0xc5c2"),
     ("bitlist TFTFFFTTFTFFFFTT", Bitlist[16], Bitlist[16](1, 0, 1, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 1, 1),
      "c5c201", h(chunk("c5c2"), chunk("10")), "0xc5c201"),
     ("progressiveBitlist TFTFFFTTFTFFFFTT", ProgressiveBitlist, ProgressiveBitlist(1, 0, 1, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 1, 1),
-     "c5c201", h(h(chunk(""), chunk("c5c2")), chunk("10")), "0xc5c201"),
+     "c5c201", h(h(chunk("c5c2"), chunk("")), chunk("10")), "0xc5c201"),
     ("bitvector 256", Bitvector[256], Bitvector[256](1 for i in range(256)),
      "ff" * 32, chunk("ff" * 32), "0x" + ("ff" * 32)),
     ("bitlist 256", Bitlist[256], Bitlist[256](1 for i in range(256)),
      "ff" * 32 + "01", h(chunk("ff" * 32), chunk("0001")), "0x" + ("ff" * 32) + "01"),
     ("progressiveBitlist 256", ProgressiveBitlist, ProgressiveBitlist(1 for i in range(256)),
-     "ff" * 32 + "01", h(h(chunk(""), chunk("ff" * 32)), chunk("0001")), "0x" + ("ff" * 32) + "01"),
+     "ff" * 32 + "01", h(h(chunk("ff" * 32), chunk("")), chunk("0001")), "0x" + ("ff" * 32) + "01"),
     ("bitvector 257", Bitvector[257], Bitvector[257](1 for i in range(257)),
      "ff" * 32 + "01", h(chunk("ff" * 32), chunk("01")), "0x" + ("ff" * 32) + "01"),
     ("bitlist 257", Bitlist[257], Bitlist[257](1 for i in range(257)),
      "ff" * 32 + "03", h(h(chunk("ff" * 32), chunk("01")), chunk("0101")), "0x" + ("ff" * 32) + "03"),
     ("progressiveBitlist 257", ProgressiveBitlist, ProgressiveBitlist(1 for i in range(257)),
-     "ff" * 32 + "03", h(h(h(chunk(""), merge(chunk("01"), zero_hashes[0:2])), chunk("ff" * 32)), chunk("0101")), "0x" + ("ff" * 32) + "03"),
+     "ff" * 32 + "03", h(h(chunk("ff" * 32), h(merge(chunk("01"), zero_hashes[0:2]), chunk(""))), chunk("0101")), "0x" + ("ff" * 32) + "03"),
     ("long bitvector", Bitvector[512], Bitvector[512](1 for i in range(512)),
      "ff" * 64, h("ff" * 32, "ff" * 32), "0x" + ("ff" * 64)),
     ("long bitlist", Bitlist[512], Bitlist[512](1),
      "03", h(h(chunk("01"), chunk("")), chunk("01")), "0x03"),
     ("long progressiveBitlist", ProgressiveBitlist, ProgressiveBitlist(1),
-     "03", h(h(chunk(""), chunk("01")), chunk("01")), "0x03"),
+     "03", h(h(chunk("01"), chunk("")), chunk("01")), "0x03"),
     ("long bitlist", Bitlist[512], Bitlist[512](1 for i in range(512)),
      "ff" * 64 + "01", h(h("ff" * 32, "ff" * 32), chunk("0002")), "0x" + ("ff" * 64 + "01")),
     ("long progressiveBitlist", ProgressiveBitlist, ProgressiveBitlist(1 for i in range(512)),
-     "ff" * 64 + "01", h(h(h(chunk(""), merge(chunk("ff" * 32), zero_hashes[0:2])), chunk("ff" * 32)), chunk("0002")), "0x" + ("ff" * 64 + "01")),
+     "ff" * 64 + "01", h(h(chunk("ff" * 32), h(merge(chunk("ff" * 32), zero_hashes[0:2]), chunk(""))), chunk("0002")), "0x" + ("ff" * 64 + "01")),
     ("odd bitvector", Bitvector[513], Bitvector[513](1 for i in range(513)),
      "ff" * 64 + "01", h(h("ff" * 32, "ff" * 32), h(chunk("01"), chunk(""))), "0x" + ("ff" * 64) + "01"),
     ("odd bitlist", Bitlist[513], Bitlist[513](1 for i in range(513)),
      "ff" * 64 + "03", h(h(h("ff" * 32, "ff" * 32), h(chunk("01"), chunk(""))), chunk("0102")),
      "0x" + ("ff" * 64) + "03"),
     ("odd progressiveBitlist", ProgressiveBitlist, ProgressiveBitlist(1 for i in range(513)),
-     "ff" * 64 + "03", h(h(h(chunk(""), h(h(chunk("ff" * 32), chunk("01")), h(chunk(""), chunk("")))), chunk("ff" * 32)), chunk("0102")),
+     "ff" * 64 + "03", h(h(chunk("ff" * 32), h(h(h(chunk("ff" * 32), chunk("01")), h(chunk(""), chunk(""))), chunk(""))), chunk("0102")),
      "0x" + ("ff" * 64) + "03"),
     ("uint8 00", uint8, uint8(0x00), "00", chunk("00"), 0),
     ("uint8 01", uint8, uint8(0x01), "01", chunk("01"), 1),
@@ -246,18 +246,18 @@ test_data = [
     ("compatibleUnionA", CompatibleUnion({1: ProgressiveSingleFieldContainerTestStruct}),
      CompatibleUnion({1: ProgressiveSingleFieldContainerTestStruct})(
          selector=1, data=ProgressiveSingleFieldContainerTestStruct(A=0xab)
-     ), "01ab", h(h(h(chunk(""), chunk("ab")), chunk("01")), chunk("01")), {'selector': 1, 'data': {'A': 0xab}}),
+     ), "01ab", h(h(h(chunk("ab"), chunk("")), chunk("01")), chunk("01")), {'selector': 1, 'data': {'A': 0xab}}),
     ("compatibleUnionBC", CompatibleUnion({2: ProgressiveSingleListContainerTestStruct, 3: ProgressiveVarTestStruct}),
      CompatibleUnion({2: ProgressiveSingleListContainerTestStruct, 3: ProgressiveVarTestStruct})(
          selector=2, data=ProgressiveSingleListContainerTestStruct(C=ProgressiveBitlist(1, 0, 0, 1, 0)),
      ), "020400000029", h(h(
-         h(h(chunk(""), h(zero_hashes[1], h(zero_hashes[0], h(h(chunk(""), chunk("09")), chunk("05"))))), zero_hashes[0]),
+         h(zero_hashes[0], h(h(zero_hashes[1], h(zero_hashes[0], h(h(chunk("09"), chunk("")), chunk("05")))), chunk(""))),
          chunk("10")
      ), chunk("02")), {'selector': 2, 'data': {'C': "0x29"}}),
     ("compatibleUnionABCA", CompatibleUnion({1: ProgressiveSingleFieldContainerTestStruct, 2: ProgressiveSingleListContainerTestStruct, 3: ProgressiveVarTestStruct, 4: ProgressiveSingleFieldContainerTestStruct}),
      CompatibleUnion({1: ProgressiveSingleFieldContainerTestStruct, 2: ProgressiveSingleListContainerTestStruct, 3: ProgressiveVarTestStruct, 4: ProgressiveSingleFieldContainerTestStruct})(
          selector=4, data=ProgressiveSingleFieldContainerTestStruct(A=0xab)
-     ), "04ab", h(h(h(chunk(""), chunk("ab")), chunk("01")), chunk("04")), {'selector': 4, 'data': {'A': 0xab}}),
+     ), "04ab", h(h(h(chunk("ab"), chunk("")), chunk("01")), chunk("04")), {'selector': 4, 'data': {'A': 0xab}}),
     ("single_type_union", Union[uint16], Union[uint16](selector=0, value=uint16(0xaabb)),
      "00bbaa", h(chunk("bbaa"), chunk("")), {'selector': 0, 'value': 0xaabb}),
     ("simple_union", Union[uint16, uint32], Union[uint16, uint32](selector=0, value=uint16(0xaabb)),
@@ -296,7 +296,7 @@ test_data = [
     ("singleFieldTestStruct", SingleFieldTestStruct, SingleFieldTestStruct(A=0xab), "ab", chunk("ab"), {'A': 0xab}),
     ("progressiveSingleFieldContainerTestStruct", ProgressiveSingleFieldContainerTestStruct,
      ProgressiveSingleFieldContainerTestStruct(A=0xab), "ab",
-     h(h(chunk(""), chunk("ab")), chunk("01")), {'A': 0xab}),
+     h(h(chunk("ab"), chunk("")), chunk("01")), {'A': 0xab}),
     ("uint16 list", List[uint16, 32], List[uint16, 32](uint16(0xaabb), uint16(0xc0ad), uint16(0xeeff)), "bbaaadc0ffee",
      h(h(chunk("bbaaadc0ffee"), chunk("")), chunk("03000000")),  # max length: 32 * 2 = 64 bytes = 2 chunks
      [0xaabb, 0xc0ad, 0xeeff]),
@@ -344,7 +344,7 @@ test_data = [
     ("progressiveSingleListContainerTestStruct", ProgressiveSingleListContainerTestStruct,
      ProgressiveSingleListContainerTestStruct(C=ProgressiveBitlist(1, 0, 0, 1, 0)),
      "0400000029", h(
-         h(h(chunk(""), h(zero_hashes[1], h(zero_hashes[0], h(h(chunk(""), chunk("09")), chunk("05"))))), zero_hashes[0]),
+         h(zero_hashes[0], h(h(zero_hashes[1], h(zero_hashes[0], h(h(chunk("09"), chunk("")), chunk("05")))), chunk(""))),
          chunk("10")
      ), {'C': "0x29"}),
     ("fixedTestStruct", FixedTestStruct, FixedTestStruct(A=0xab, B=0xaabbccdd00112233, C=0x12345678), "ab33221100ddccbbaa78563412",
@@ -372,7 +372,7 @@ test_data = [
     ("progressiveVarTestStruct nil", ProgressiveVarTestStruct,
      ProgressiveVarTestStruct(A=0xab),
      "ab090000000900000001", h(
-         h(h(chunk(""), h(
+         h(chunk("ab"), h(h(
              h(
                  zero_hashes[0],
                  h(zero_hashes[3], chunk("00"))
@@ -381,13 +381,13 @@ test_data = [
                  zero_hashes[0],
                  h(chunk(""), chunk("00"))
              )
-         )), chunk("ab")),
+         ), chunk(""))),
          chunk("15")
      ), {'A': 0xab, 'B': [], 'C': "0x01"}),
     ("progressiveVarTestStruct empty", ProgressiveVarTestStruct,
      ProgressiveVarTestStruct(A=0xab, B=List[uint16, 123](), C=ProgressiveBitlist()),
      "ab090000000900000001", h(
-         h(h(chunk(""), h(
+         h(chunk("ab"), h(h(
              h(
                  zero_hashes[0],
                  h(zero_hashes[3], chunk("00"))
@@ -396,22 +396,22 @@ test_data = [
                  zero_hashes[0],
                  h(chunk(""), chunk("00"))
              )
-         )), chunk("ab")),
+         ), chunk(""))),
          chunk("15")
      ), {'A': 0xab, 'B': [], 'C': "0x01"}),
     ("progressiveVarTestStruct some", ProgressiveVarTestStruct,
      ProgressiveVarTestStruct(A=0xab, B=List[uint16, 123](0x1122, 0x3344), C=ProgressiveBitlist(1, 0, 0, 1, 0)),
      "ab090000000d0000002211443329", h(
-         h(h(chunk(""), h(
+         h(chunk("ab"), h(h(
              h(
                  zero_hashes[0],
                  h(merge(chunk("22114433"), zero_hashes[0:3]), chunk("02"))
              ),
              h(
                  zero_hashes[0],
-                 h(h(chunk(""), chunk("09")), chunk("05"))
+                 h(h(chunk("09"), chunk("")), chunk("05"))
              )
-         )), chunk("ab")),
+         ), chunk(""))),
          chunk("15")
      ), {'A': 0xab, 'B': [0x1122, 0x3344], 'C': "0x29"}),
     ("complexTestStruct", ComplexTestStruct,
@@ -543,41 +543,32 @@ test_data = [
      "ab090000000d0000002211443329",
      h(
          h(
+             chunk("ab"),  # A
              h(
+                 h(  # B, C
+                     h(zero_hashes[0], h(  # B
+                         merge(chunk("22114433"), zero_hashes[0:3]),
+                         chunk("02")  # length mix in
+                     )),
+                     h(zero_hashes[0], h( # C
+                         h(chunk("09"), chunk("")),
+                         chunk("05")  # length mix in
+                     ))
+                 ),
                  h(
-                     h(chunk(""), merge(
-                         h(  # H
-                             h(
-                                 zero_hashes[0],  # terminator
-                                 h(
-                                     h(h(chunk(""), h(
-                                         h(
-                                             zero_hashes[0],
-                                             h(merge(chunk("22114433"), zero_hashes[0:3]), chunk("02"))
-                                         ),
-                                         h(
-                                             zero_hashes[0],
-                                             h(h(chunk(""), chunk("09")), chunk("05"))
-                                         )
-                                     )), chunk("ab")),
-                                     chunk("15")
-                                 )
-                             ),
-                             chunk("01")  # length mix in
-                         ), zero_hashes[0:6])),
                      h(  # D, E, F, G
                          h(
                              h(zero_hashes[1], h(zero_hashes[0], h(  # D
-                                 h(zero_hashes[0], chunk("42424242424242423333333333333333")),
+                                 h(chunk("42424242424242423333333333333333"), zero_hashes[0]),
                                  chunk("02")  # length mix in
                              ))),
                              h(zero_hashes[1], h(zero_hashes[0], h(  # E
                                  h(
+                                     h(chunk("6745"), chunk("2301")),
                                      h(
-                                         zero_hashes[0],  # terminator
-                                         merge(h(chunk("ab89"), chunk("efcd")), zero_hashes[0:2])
-                                     ),
-                                     h(chunk("6745"), chunk("2301"))
+                                         merge(h(chunk("ab89"), chunk("efcd")), zero_hashes[0:2]),
+                                         zero_hashes[0]  # terminator
+                                     )
                                  ),
                                  chunk("02")  # length mix in
                              )))
@@ -585,11 +576,19 @@ test_data = [
                          h(
                              h(h(h(  # F
                                  h(
-                                     zero_hashes[0],  # terminator
                                      h(
                                          h(
                                              h(
-                                                 zero_hashes[0],  # terminator
+                                                 h(
+                                                     chunk("2301"),
+                                                     h(merge(chunk("010002000300"), zero_hashes[0:6]), chunk("03"))
+                                                 ),
+                                                 h(
+                                                     chunk("12"),
+                                                     zero_hashes[0]
+                                                 )
+                                             ),
+                                             h(
                                                  h(
                                                      h(
                                                          h(
@@ -614,52 +613,53 @@ test_data = [
                                                          )
                                                      ),
                                                      zero_hashes[1]
-                                                 )
-                                             ),
-                                             h(
-                                                 h(
-                                                     chunk("2301"),
-                                                     h(merge(chunk("010002000300"), zero_hashes[0:6]), chunk("03"))
                                                  ),
-                                                 h(
-                                                     chunk("12"),
-                                                     zero_hashes[0]
-                                                 )
+                                                 zero_hashes[0]  # terminator
                                              )
                                          ),
                                          chunk("03")  # length mix in
-                                     )
+                                     ),
+                                     zero_hashes[0]  # terminator
                                  ),
                                  chunk("01")  # length mix in
                              ), zero_hashes[0]), zero_hashes[1]),
                              h(zero_hashes[1], h(zero_hashes[0], h(  # G
                                  merge(h(
                                      h(
-                                         h(h(chunk(""), chunk("00")), chunk("01")),
-                                         h(h(chunk(""), chunk("00")), chunk("01"))
+                                         h(h(chunk("00"), chunk("")), chunk("01")),
+                                         h(h(chunk("00"), chunk("")), chunk("01"))
                                      ),
                                      h(
-                                         h(h(chunk(""), chunk("42")), chunk("01")),
+                                         h(h(chunk("42"), chunk("")), chunk("01")),
                                          zero_hashes[0]
                                      )
                                  ), zero_hashes[2:4]),
                                  chunk("03")  # length mix in
                              )))
                          )
-                     )
+                     ),
+                     h(merge(
+                         h(  # H
+                             h(
+                                 h(
+                                     h(chunk("ab"), h(h(
+                                         h(
+                                             zero_hashes[0],
+                                             h(merge(chunk("22114433"), zero_hashes[0:3]), chunk("02"))
+                                         ),
+                                         h(
+                                             zero_hashes[0],
+                                             h(h(chunk("09"), chunk("")), chunk("05"))
+                                         )
+                                     ), chunk(""))),
+                                     chunk("15")
+                                 ),
+                                 zero_hashes[0]  # terminator
+                             ),
+                             chunk("01")  # length mix in
+                         ), zero_hashes[0:6]), chunk(""))
                  ),
-                 h(  # B, C
-                     h(zero_hashes[0], h(  # B
-                         merge(chunk("22114433"), zero_hashes[0:3]),
-                         chunk("02")  # length mix in
-                     )),
-                     h(zero_hashes[0], h( # C
-                         h(chunk(""), chunk("09")),
-                         chunk("05")  # length mix in
-                     ))
-                 )
-             ),
-             chunk("ab")  # A
+             )
          ),
          chunk("153130")
      ), {
@@ -696,8 +696,8 @@ test_data = [
      "00010101",
      h(
          h(
-             zero_hashes[0],  # terminator
-             chunk("00010101")
+             chunk("00010101"),
+             zero_hashes[0]  # terminator
          ),
          chunk("02")  # length mix in
      ), [0x0100, 0x0101]),
@@ -711,11 +711,11 @@ test_data = [
      "0002",
      h(
          h(
+             chunk("00010101020103010401050106010701080109010a010b010c010d010e010f01"),
              h(
-                 zero_hashes[0],  # terminator
-                 merge(chunk("0002"), zero_hashes[0:2])
-             ),
-             chunk("00010101020103010401050106010701080109010a010b010c010d010e010f01")
+                 merge(chunk("0002"), zero_hashes[0:2]),
+                 zero_hashes[0]  # terminator
+             )
          ),
          chunk("11")  # length mix in
      ), [
@@ -743,8 +743,8 @@ test_data = [
      "30023102320233023402350236023702380239023a023b023c023d023e023f02",
      h(
          h(
+             chunk("00010101020103010401050106010701080109010a010b010c010d010e010f01"),
              h(
-                 zero_hashes[0],  # terminator
                  h(
                      h(
                          chunk("00020102020203020402050206020702080209020a020b020c020d020e020f02"),
@@ -754,9 +754,9 @@ test_data = [
                          chunk("20022102220223022402250226022702280229022a022b022c022d022e022f02"),
                          chunk("30023102320233023402350236023702380239023a023b023c023d023e023f02")
                      )
-                 )
-             ),
-             chunk("00010101020103010401050106010701080109010a010b010c010d010e010f01")
+                 ),
+                 zero_hashes[0]  # terminator
+             )
          ),
          chunk("50")  # length mix in
      ), [
@@ -793,11 +793,8 @@ test_data = [
      "0003",
      h(
          h(
+             chunk("00010101020103010401050106010701080109010a010b010c010d010e010f01"),
              h(
-                 h(
-                     zero_hashes[0],  # terminator
-                     merge(chunk("0003"), zero_hashes[0:4])
-                 ),
                  h(
                      h(
                          chunk("00020102020203020402050206020702080209020a020b020c020d020e020f02"),
@@ -807,9 +804,12 @@ test_data = [
                          chunk("20022102220223022402250226022702280229022a022b022c022d022e022f02"),
                          chunk("30023102320233023402350236023702380239023a023b023c023d023e023f02")
                      )
+                 ),
+                 h(
+                     merge(chunk("0003"), zero_hashes[0:4]),
+                     zero_hashes[0]  # terminator
                  )
-             ),
-             chunk("00010101020103010401050106010701080109010a010b010c010d010e010f01")
+             )
          ),
          chunk("51")  # length mix in
      ), [
@@ -839,8 +839,8 @@ test_data = [
      "01",
      h(
          h(
-             zero_hashes[0],  # terminator
-             chunk("01")
+             chunk("01"),
+             zero_hashes[0]  # terminator
          ),
          chunk("01")  # length mix in
      ), [{'A': 0x01}]),
@@ -852,11 +852,11 @@ test_data = [
      "0102",
      h(
          h(
+             chunk("01"),
              h(
-                 zero_hashes[0],  # terminator
-                 merge(chunk("02"), zero_hashes[0:2])
-             ),
-             chunk("01")
+                 merge(chunk("02"), zero_hashes[0:2]),
+                 zero_hashes[0]  # terminator
+             )
          ),
          chunk("02")  # length mix in
      ), [{'A': 0x01}, {'A': 0x02}]),
@@ -871,8 +871,8 @@ test_data = [
      "0102030405",
      h(
          h(
+             chunk("01"),
              h(
-                 zero_hashes[0],  # terminator
                  h(
                      h(
                          chunk("02"),
@@ -882,9 +882,9 @@ test_data = [
                          chunk("04"),
                          chunk("05")
                      )
-                 )
-             ),
-             chunk("01")
+                 ),
+                 zero_hashes[0]  # terminator
+             )
          ),
          chunk("05")  # length mix in
      ), [{'A': 0x01}, {'A': 0x02}, {'A': 0x03}, {'A': 0x04}, {'A': 0x05}]),
@@ -937,14 +937,14 @@ test_data = [
      "23010700000012010002000300",  # D[2][0]
      h(
          h(
-             h(h(zero_hashes[0], chunk("666f6f626172")), chunk("06")),
+             h(h(chunk("666f6f626172"), zero_hashes[0]), chunk("06")),
              h(
                  h(
+                     chunk("0100000000000000020000000000000003000000000000000400000000000000"),
                      h(
-                         zero_hashes[0],  # terminator
-                         merge(chunk("0500000000000000"), zero_hashes[0:2])
-                     ),
-                     chunk("0100000000000000020000000000000003000000000000000400000000000000")
+                         merge(chunk("0500000000000000"), zero_hashes[0:2]),
+                         zero_hashes[0]  # terminator
+                     )
                  ),
                  chunk("05")  # length mix in
              )
@@ -952,84 +952,29 @@ test_data = [
          h(
              h(
                  h(
+                     h(chunk("1300"), chunk("3700")),
                      h(
-                         zero_hashes[0],  # terminator
-                         merge(h(chunk("2004"), chunk("6900")), zero_hashes[0:2])
-                     ),
-                     h(chunk("1300"), chunk("3700"))
+                         merge(h(chunk("2004"), chunk("6900")), zero_hashes[0:2]),
+                         zero_hashes[0]  # terminator
+                     )
                  ),
                  chunk("02")  # length mix in
              ),
              h(
                  h(
                      h(
-                         zero_hashes[0],  # terminator
                          h(
                              h(
                                  h(
-                                     h(
-                                         h(
-                                             zero_hashes[0],  # terminator
-                                             h(
-                                                 h(
-                                                     h(
-                                                         h(
-                                                             chunk("5604"),
-                                                             h(merge(chunk("040005000600"), zero_hashes[0:6]), chunk("03"))
-                                                         ),
-                                                         h(
-                                                             chunk("45"),
-                                                             zero_hashes[0]
-                                                         )
-                                                     ),
-                                                     zero_hashes[0]
-                                                 ),
-                                                 zero_hashes[1]
-                                             )
-                                         ),
-                                         h(
-                                             h(
-                                                 chunk("2301"),
-                                                 h(merge(chunk("010002000300"), zero_hashes[0:6]), chunk("03")),
-                                             ),
-                                             h(
-                                                 chunk("12"),
-                                                 zero_hashes[0]
-                                             )
-                                         )
-                                     ),
-                                     chunk("02")  # length mix in
+                                     chunk("2301"),
+                                     h(merge(chunk("010002000300"), zero_hashes[0:6]), chunk("03"))
                                  ),
                                  h(
-                                     h(
-                                         zero_hashes[0],  # terminator
-                                         h(
-                                             h(
-                                                 chunk("2301"),
-                                                 h(merge(chunk("010002000300"), zero_hashes[0:6]), chunk("03")),
-                                             ),
-                                             h(
-                                                 chunk("12"),
-                                                 zero_hashes[0]
-                                             )
-                                         )
-                                     ),
-                                     chunk("01")  # length mix in
-                                 ),
+                                     chunk("12"),
+                                     zero_hashes[0]
+                                 )
                              ),
                              h(
-                                 h(
-                                     zero_hashes[0],  # terminator
-                                     chunk("00")  # length mix in
-                                 ),
-                                 zero_hashes[0]
-                             )
-                         )
-                     ),
-                     h(
-                         h(
-                             h(
-                                 zero_hashes[0],  # terminator
                                  h(
                                      h(
                                          h(
@@ -1054,21 +999,76 @@ test_data = [
                                          )
                                      ),
                                      zero_hashes[1]
+                                 ),
+                                 zero_hashes[0]  # terminator
+                             ),
+                         ),
+                         chunk("03")  # length mix in
+                     ),
+                     h(
+                         h(
+                             h(
+                                 h(
+                                     h(
+                                         h(
+                                             h(
+                                                 chunk("2301"),
+                                                 h(merge(chunk("010002000300"), zero_hashes[0:6]), chunk("03")),
+                                             ),
+                                             h(
+                                                 chunk("12"),
+                                                 zero_hashes[0]
+                                             )
+                                         ),
+                                         h(
+                                             h(
+                                                 h(
+                                                     h(
+                                                         h(
+                                                             chunk("5604"),
+                                                             h(merge(chunk("040005000600"), zero_hashes[0:6]), chunk("03"))
+                                                         ),
+                                                         h(
+                                                             chunk("45"),
+                                                             zero_hashes[0]
+                                                         )
+                                                     ),
+                                                     zero_hashes[0]
+                                                 ),
+                                                 zero_hashes[1]
+                                             ),
+                                             zero_hashes[0]  # terminator
+                                         ),
+                                     ),
+                                     chunk("02")  # length mix in
+                                 ),
+                                 h(
+                                     h(
+                                         h(
+                                             h(
+                                                 chunk("2301"),
+                                                 h(merge(chunk("010002000300"), zero_hashes[0:6]), chunk("03")),
+                                             ),
+                                             h(
+                                                 chunk("12"),
+                                                 zero_hashes[0]
+                                             )
+                                         ),
+                                         zero_hashes[0]  # terminator
+                                     ),
+                                     chunk("01")  # length mix in
                                  )
                              ),
                              h(
                                  h(
-                                     chunk("2301"),
-                                     h(merge(chunk("010002000300"), zero_hashes[0:6]), chunk("03"))
+                                     zero_hashes[0],  # terminator
+                                     chunk("00")  # length mix in
                                  ),
-                                 h(
-                                     chunk("12"),
-                                     zero_hashes[0]
-                                 )
+                                 zero_hashes[0]
                              )
                          ),
-                         chunk("03")  # length mix in
-                     ),
+                         zero_hashes[0]  # terminator
+                     )
                  ),
                  chunk("04")  # length mix in
              )

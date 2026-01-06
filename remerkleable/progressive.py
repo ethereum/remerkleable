@@ -27,8 +27,8 @@ def subtree_fill_progressive(nodes: Sequence[Node], depth: int = 0) -> Node:
         return zero_node(0)
     base_size = 1 << depth
     return PairNode(
-        subtree_fill_progressive(nodes[base_size:], depth + 2),
         subtree_fill_to_contents(nodes[:base_size], depth),  # type: ignore
+        subtree_fill_progressive(nodes[base_size:], depth + 2),
     )
 
 
@@ -39,8 +39,8 @@ def readonly_iter_progressive(backing: Node, length: int, elem_type: Type[View],
         base_size = 1 << tree_depth
         elems_per_chunk = 32 // elem_type.type_byte_length() if is_packed else 1
         subtree_len = min(base_size * elems_per_chunk, length)
-        yield from create_readonly_iter(backing.get_right(), tree_depth, subtree_len, elem_type, is_packed)
-        backing = backing.get_left()
+        yield from create_readonly_iter(backing.get_left(), tree_depth, subtree_len, elem_type, is_packed)
+        backing = backing.get_right()
         length -= subtree_len
         tree_depth += 2
 
@@ -51,10 +51,10 @@ def to_gindex_progressive(chunk_i: int) -> Tuple[Gindex, int, int]:
     while True:
         base_size = 1 << depth
         if chunk_i < base_size:
-            return Gindex((((gindex << 1) + 1) << depth) + chunk_i), depth, chunk_i
+            return Gindex(((gindex << 1) << depth) + chunk_i), depth, chunk_i
         chunk_i -= base_size
         depth += 2
-        gindex <<= 1
+        gindex = (gindex << 1) + 1
 
 
 def to_target_progressive(i: int, elems_per_chunk: int = 1) -> Tuple[Gindex, int, int]:
@@ -66,7 +66,7 @@ def to_target_progressive(i: int, elems_per_chunk: int = 1) -> Tuple[Gindex, int
     target = LEFT_GINDEX
     d = 0
     while d < depth:
-        target = Gindex(target << 1)
+        target = Gindex((target << 1) + 1)
         d += 2
 
     return target, d, i
@@ -167,8 +167,8 @@ class ProgressiveList(MonoSubtreeView):
 
         next_backing = self.get_backing()
         if i == 0:  # Create new subtree
-            next_backing = next_backing.setter(gindex)(PairNode(zero_node(0), zero_node(d)))
-        gindex = Gindex((gindex << 1) + 1)
+            next_backing = next_backing.setter(gindex)(PairNode(zero_node(d), zero_node(0)))
+        gindex = Gindex(gindex << 1)
         next_backing = next_backing.setter(gindex)(append_view(
             next_backing.getter(gindex), d, i, v, elem_type, is_packed))
 
@@ -193,7 +193,7 @@ class ProgressiveList(MonoSubtreeView):
         if i == 0:  # Delete entire subtree
             next_backing = next_backing.setter(gindex)(zero_node(0))
         else:
-            gindex = Gindex((gindex << 1) + 1)
+            gindex = Gindex(gindex << 1)
             next_backing = next_backing.setter(gindex)(pop_and_summarize(
                 next_backing.getter(gindex), d, i, elem_type, is_packed))
 
@@ -254,8 +254,8 @@ def iter_progressive_bitlist(backing: Node, bitlen: int) -> Iterator[Tuple[Node,
     while bitlen > 0:
         base_bits = 256 << tree_depth
         is_final_chunk = bitlen <= base_bits
-        yield backing.get_right(), tree_depth, min(bitlen, base_bits), is_final_chunk
-        backing = backing.get_left()
+        yield backing.get_left(), tree_depth, min(bitlen, base_bits), is_final_chunk
+        backing = backing.get_right()
         bitlen -= base_bits
         tree_depth += 2
 
@@ -321,8 +321,8 @@ class ProgressiveBitlist(BitsView):
 
         next_backing = self.get_backing()
         if i == 0:  # Create new subtree
-            next_backing = next_backing.setter(gindex)(PairNode(zero_node(0), zero_node(d)))
-        gindex = Gindex((gindex << 1) + 1)
+            next_backing = next_backing.setter(gindex)(PairNode(zero_node(d), zero_node(0)))
+        gindex = Gindex(gindex << 1)
         next_backing = next_backing.setter(gindex)(append_bit(
             next_backing.getter(gindex), d, i, v))
 
@@ -345,7 +345,7 @@ class ProgressiveBitlist(BitsView):
         if i == 0:  # Delete entire subtree
             next_backing = next_backing.setter(gindex)(zero_node(0))
         else:
-            gindex = Gindex((gindex << 1) + 1)
+            gindex = Gindex(gindex << 1)
             next_backing = next_backing.setter(gindex)(pop_bit(
                 next_backing.getter(gindex), d, i))
 
@@ -407,14 +407,14 @@ def iter_progressive_container(backing: Node, active_fields: Sequence[Literal[0,
     while length > 0:
         base_size = 1 << tree_depth
         subtree_len = min(base_size, length)
-        for node in NodeIter(backing.get_right(), tree_depth, subtree_len):
+        for node in NodeIter(backing.get_left(), tree_depth, subtree_len):
             if node_index >= len(active_fields):
                 return
             if active_fields[node_index] == 1:
                 yield elem_types[field_index].view_from_backing(node, None)
                 field_index += 1
             node_index += 1
-        backing = backing.get_left()
+        backing = backing.get_right()
         length -= subtree_len
         tree_depth += 2
 
