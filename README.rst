@@ -1,4 +1,4 @@
-.. image:: https://raw.githubusercontent.com/protolambda/remerkleable/master/docs/_static/logo.png
+.. image:: https://raw.githubusercontent.com/ethereum/remerkleable/master/docs/_static/logo.png
    :width: 100 px
 
 ``remerkleable``
@@ -16,8 +16,8 @@
 .. image:: https://img.shields.io/pypi/implementation/eth-remerkleable.svg
     :target: https://pypi.python.org/pypi/eth-remerkleable
 
-.. image:: https://github.com/protolambda/remerkleable/workflows/Remerkleable%20Python%20CI/badge.svg
-    :target: https://github.com/protolambda/remerkleable/actions
+.. image:: https://github.com/ethereum/remerkleable/workflows/Remerkleable%20Python%20CI/badge.svg
+    :target: https://github.com/ethereum/remerkleable/actions
 
 
 **Re-merkle-able**: Typed mutable SSZ views over cached and immutable binary Merkle trees.
@@ -55,7 +55,7 @@ Project Links
 - Docs: https://remerkleable.readthedocs.io/
 - Changelog: https://remerkleable.readthedocs.io/en/latest/changelog.html
 - PyPI: https://pypi.python.org/pypi/eth-remerkleable
-- Issues: https://github.com/protolambda/remerkleable/issues
+- Issues: https://github.com/ethereum/remerkleable/issues
 
 Also see
 ---------

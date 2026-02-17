@@ -29,7 +29,7 @@ intersphinx_mapping = {
     "python": ("https://docs.python.org/3/", None),
 }
 
-issues_github_path = "protolambda/remerkleable"
+issues_github_path = "ethereum/remerkleable"
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -55,8 +55,8 @@ html_static_path = ['_static']
 html_context = {
     "project_links": [
         ProjectLink("PyPI releases", "https://pypi.org/project/eth-remerkleable/"),
-        ProjectLink("Source Code", "https://github.com/protolambda/remerkleable/"),
-        ProjectLink("Issue Tracker", "https://github.com/protolambda/remerkleable/issues/"),
+        ProjectLink("Source Code", "https://github.com/ethereum/remerkleable/"),
+        ProjectLink("Issue Tracker", "https://github.com/ethereum/remerkleable/issues/"),
         ProjectLink("Contact", "https://twitter.com/protolambda/"),
     ]
 }
