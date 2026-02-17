@@ -52,8 +52,6 @@ Features
 Project Links
 --------------
 
-- Docs: https://remerkleable.readthedocs.io/
-- Changelog: https://remerkleable.readthedocs.io/en/latest/changelog.html
 - PyPI: https://pypi.python.org/pypi/eth-remerkleable
 - Issues: https://github.com/ethereum/remerkleable/issues
 
