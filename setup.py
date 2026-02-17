@@ -4,14 +4,14 @@ with open("README.rst", "rt", encoding="utf8") as f:
     readme = f.read()
 
 setup(
-    name="remerkleable",
+    name="eth-remerkleable",
     description="Typed mutable SSZ views over cached and immutable binary merkle trees",
-    version="0.1.28",
+    version="0.1.29",
     long_description=readme,
     long_description_content_type="text/x-rst",
     author="protolambda",
     author_email="proto+pip@protolambda.com",
-    url="https://github.com/protolambda/remerkleable",
+    url="https://github.com/ethereum/remerkleable",
     python_requires=">=3.8, <4",
     license="MIT",
     packages=find_packages(),

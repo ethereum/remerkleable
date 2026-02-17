@@ -1,20 +1,20 @@
 Remerkleable
 ========================================
 
-.. image:: https://img.shields.io/pypi/l/remerkleable.svg
-    :target: https://pypi.python.org/pypi/remerkleable
+.. image:: https://img.shields.io/pypi/l/eth-remerkleable.svg
+    :target: https://pypi.python.org/pypi/eth-remerkleable
 
-.. image:: https://img.shields.io/pypi/pyversions/remerkleable.svg
-    :target: https://pypi.python.org/pypi/remerkleable
+.. image:: https://img.shields.io/pypi/pyversions/eth-remerkleable.svg
+    :target: https://pypi.python.org/pypi/eth-remerkleable
 
-.. image::  https://img.shields.io/pypi/status/remerkleable.svg
-    :target: https://pypi.python.org/pypi/remerkleable
+.. image::  https://img.shields.io/pypi/status/eth-remerkleable.svg
+    :target: https://pypi.python.org/pypi/eth-remerkleable
 
-.. image:: https://img.shields.io/pypi/implementation/remerkleable.svg
-    :target: https://pypi.python.org/pypi/remerkleable
+.. image:: https://img.shields.io/pypi/implementation/eth-remerkleable.svg
+    :target: https://pypi.python.org/pypi/eth-remerkleable
 
-.. image:: https://github.com/protolambda/remerkleable/workflows/Remerkleable%20Python%20CI/badge.svg
-    :target: https://github.com/protolambda/remerkleable/actions
+.. image:: https://github.com/ethereum/remerkleable/workflows/Remerkleable%20Python%20CI/badge.svg
+    :target: https://github.com/ethereum/remerkleable/actions
 
 **Re-merkle-able**: Typed mutable SSZ views over cached and immutable binary Merkle trees.
 
