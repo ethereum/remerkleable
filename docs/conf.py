@@ -6,7 +6,7 @@ from pallets_sphinx_themes import ProjectLink
 project = "remerkleable"
 copyright = "2019 protolambda"
 author = "protolambda"
-release, version = get_version("remerkleable")
+release, version = get_version("eth-remerkleable")
 
 
 # -- General configuration ---------------------------------------------------
@@ -54,7 +54,7 @@ html_static_path = ['_static']
 
 html_context = {
     "project_links": [
-        ProjectLink("PyPI releases", "https://pypi.org/project/remerkleable/"),
+        ProjectLink("PyPI releases", "https://pypi.org/project/eth-remerkleable/"),
         ProjectLink("Source Code", "https://github.com/protolambda/remerkleable/"),
         ProjectLink("Issue Tracker", "https://github.com/protolambda/remerkleable/issues/"),
         ProjectLink("Contact", "https://twitter.com/protolambda/"),
