@@ -92,37 +92,51 @@ class uint(int, BasicView):
             raise ValueError(f"value out of bounds for {cls}")
         return super().__new__(cls, value)
 
+    def _arith(self, result, other):
+        """Validate arithmetic result: check for mixed uint sizes."""
+        if hasattr(other, '_max_val') and self._max_val != other._max_val:
+            raise ValueError("value must have equal byte length to coerce it")
+        return self.__class__(result)
+
     def __add__(self: T, other: int) -> T:
-        return self.__class__(super().__add__(self.__class__.coerce_view(other)))
+        return self._arith(int.__add__(self, other), other)
 
     def __radd__(self: T, other: int) -> T:
-        return self.__add__(other)
+        return self._arith(int.__add__(other, self), other)
 
     def __sub__(self: T, other: int) -> T:
-        return self.__class__(super().__sub__(self.__class__.coerce_view(other)))
+        return self._arith(int.__sub__(self, other), other)
 
     def __rsub__(self: T, other: int) -> T:
-        return self.__class__(self.__class__.coerce_view(other).__sub__(self))
+        return self._arith(int.__sub__(other, self), other)
 
     def __mul__(self, other):
-        if not isinstance(other, int):
-            return super().__mul__(other)
-        return self.__class__(super().__mul__(self.__class__.coerce_view(other)))
+        result = int.__mul__(self, other)
+        if result is NotImplemented:
+            return result
+        if hasattr(other, '_max_val') and self._max_val != other._max_val:
+            raise ValueError("value must have equal byte length to coerce it")
+        return self.__class__(result)
 
     def __rmul__(self, other):
-        return self.__mul__(other)
+        result = int.__mul__(self, other)
+        if result is NotImplemented:
+            return result
+        if hasattr(other, '_max_val') and self._max_val != other._max_val:
+            raise ValueError("value must have equal byte length to coerce it")
+        return self.__class__(result)
 
     def __mod__(self: T, other: int) -> T:
-        return self.__class__(super().__mod__(self.__class__.coerce_view(other)))
+        return self._arith(int.__mod__(self, other), other)
 
     def __rmod__(self: T, other: int) -> T:
-        return self.__class__(self.__class__.coerce_view(other).__mod__(self))
+        return self._arith(int.__mod__(other, self), other)
 
     def __floordiv__(self: T, other: int) -> T:  # Better known as "//"
-        return self.__class__(super().__floordiv__(self.__class__.coerce_view(other)))
+        return self._arith(int.__floordiv__(self, other), other)
 
     def __rfloordiv__(self: T, other: int) -> T:
-        return self.__class__(self.__class__.coerce_view(other).__floordiv__(self))
+        return self._arith(int.__floordiv__(other, self), other)
 
     def __truediv__(self, other):
         raise OperationNotSupported(f"non-integer division '{self} / {other}' "
