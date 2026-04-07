@@ -85,12 +85,10 @@ W = TypeVar('W', bound=int)
 
 class uint(int, BasicView):
     __slots__ = ()
+    _max_val = float('inf')
 
     def __new__(cls, value: int):
-        if value < 0:
-            raise ValueError(f"unsigned type {cls} must not be negative")
-        byte_len = cls.type_byte_length()
-        if value.bit_length() > (byte_len << 3):
+        if value < 0 or value > cls._max_val:
             raise ValueError(f"value out of bounds for {cls}")
         return super().__new__(cls, value)
 
@@ -235,6 +233,7 @@ class uint(int, BasicView):
 
 class uint8(uint):
     __slots__ = ()
+    _max_val = (1 << 8) - 1
 
     @classmethod
     def type_byte_length(cls) -> int:
@@ -243,6 +242,7 @@ class uint8(uint):
 
 class uint16(uint):
     __slots__ = ()
+    _max_val = (1 << 16) - 1
 
     @classmethod
     def type_byte_length(cls) -> int:
@@ -251,6 +251,7 @@ class uint16(uint):
 
 class uint32(uint):
     __slots__ = ()
+    _max_val = (1 << 32) - 1
 
     @classmethod
     def type_byte_length(cls) -> int:
@@ -259,6 +260,7 @@ class uint32(uint):
 
 class uint64(uint):
     __slots__ = ()
+    _max_val = (1 << 64) - 1
 
     @classmethod
     def type_byte_length(cls) -> int:
@@ -270,6 +272,7 @@ class uint64(uint):
 
 class uint128(uint):
     __slots__ = ()
+    _max_val = (1 << 128) - 1
 
     @classmethod
     def type_byte_length(cls) -> int:
@@ -281,6 +284,7 @@ class uint128(uint):
 
 class uint256(uint):
     __slots__ = ()
+    _max_val = (1 << 256) - 1
 
     @classmethod
     def type_byte_length(cls) -> int:

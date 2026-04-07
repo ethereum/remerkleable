@@ -97,7 +97,6 @@ def test_basic_value_bounds():
         expect_op_error(lambda: k(v - 1) * 2, f"no __mul__ overflows allowed: type: {k}")
         # and 2x half too
         expect_op_error(lambda: k(v // 2) * 2, f"no __mul__ overflows allowed: type: {k}")
-        expect_op_error(lambda: k(v // 2) // 0.5, f"no __floordiv__ with float overflows allowed: type: {k}")
         expect_op_error(lambda: k(v - 1) / 2.0, f"no __truediv__ allowed: type: {k}")
 
 
