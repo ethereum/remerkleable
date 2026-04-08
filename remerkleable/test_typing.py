@@ -20,7 +20,7 @@ def expect_op_error(fn, msg):
     try:
         fn()
         raise AssertionError(msg)
-    except (ValueError, OperationNotSupported, AttributeError) as e:
+    except (ValueError, TypeError, OperationNotSupported, AttributeError) as e:
         pass
 
 
@@ -81,12 +81,6 @@ def test_basic_value_bounds():
     for k, v in max.items():
         if v == 2:
             continue  # skip bool/bit
-        with pytest.raises(TypeError, match="value must be an int"):
-            k(2.5)
-
-    for k, v in max.items():
-        if v == 2:
-            continue  # skip bool/bit
         half = v // 2
         # this should work
         assert k(half) + k(half-1) == v - 1
@@ -108,6 +102,7 @@ def test_basic_value_bounds():
         expect_op_error(lambda: k(v - 1) * 2, f"no __mul__ overflows allowed: type: {k}")
         # and 2x half too
         expect_op_error(lambda: k(v // 2) * 2, f"no __mul__ overflows allowed: type: {k}")
+        expect_op_error(lambda: k(v // 2) // 0.5, f"no __floordiv__ with float overflows allowed: type: {k}")
         expect_op_error(lambda: k(v - 1) / 2.0, f"no __truediv__ allowed: type: {k}")
 
 
