@@ -49,6 +49,11 @@ def test_basic_instances():
     assert isinstance(bit(False), boolean)
 
 
+def test_uint_is_abstract():
+    with pytest.raises(TypeError, match="uint is abstract"):
+        uint(1)
+
+
 def test_basic_value_bounds():
     max = {
         boolean: 2 ** 1,
@@ -72,6 +77,12 @@ def test_basic_value_bounds():
         assert k(0) == 0
         # but we do not allow underflows
         expect_op_error(lambda: k(-1), "no underflows allowed")
+
+    for k, v in max.items():
+        if v == 2:
+            continue  # skip bool/bit
+        with pytest.raises(TypeError, match="value must be an int"):
+            k(2.5)
 
     for k, v in max.items():
         if v == 2:

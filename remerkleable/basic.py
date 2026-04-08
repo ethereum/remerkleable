@@ -85,9 +85,13 @@ W = TypeVar('W', bound=int)
 
 class uint(int, BasicView):
     __slots__ = ()
-    _max_val = float('inf')
+    _max_val: int
 
     def __new__(cls, value: int):
+        if cls is uint:
+            raise TypeError("uint is abstract; use a concrete uint type")
+        if not isinstance(value, int):
+            raise TypeError(f"{cls.__name__} value must be an int")
         if value < 0 or value > cls._max_val:
             raise ValueError(f"value out of bounds for {cls}")
         return super().__new__(cls, value)
