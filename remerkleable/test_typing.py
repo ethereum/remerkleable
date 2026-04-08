@@ -20,7 +20,7 @@ def expect_op_error(fn, msg):
     try:
         fn()
         raise AssertionError(msg)
-    except (ValueError, OperationNotSupported, AttributeError) as e:
+    except (ValueError, TypeError, OperationNotSupported, AttributeError) as e:
         pass
 
 
@@ -47,6 +47,11 @@ def test_basic_instances():
     assert isinstance(boolean(False), BasicView)
     assert isinstance(bit(True), boolean)
     assert isinstance(bit(False), boolean)
+
+
+def test_uint_is_abstract():
+    with pytest.raises(TypeError, match="uint is abstract"):
+        uint(1)
 
 
 def test_basic_value_bounds():
