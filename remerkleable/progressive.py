@@ -11,7 +11,7 @@ from textwrap import indent
 import io
 from remerkleable.basic import boolean, byte, uint8, uint256
 from remerkleable.bitfields import BitsView, Bitvector, append_bit, deserialize_bits, pop_bit, serialize_bits
-from remerkleable.core import BackedView, BasicView, ObjType, View, ViewHook, ViewMeta, \
+from remerkleable.core import BackedView, BasicView, ObjParseException, ObjType, View, ViewHook, ViewMeta, \
     OFFSET_BYTE_LENGTH, pack_bits_to_chunks
 from remerkleable.complex import Container, Fields, MonoSubtreeView, \
     append_view, create_readonly_iter, get_field_val_repr, pop_and_summarize
@@ -77,6 +77,9 @@ def to_target_progressive_elem(elem_type: Type[View], is_packed: bool, i: int) -
         return to_target_progressive(i, 32 // elem_type.type_byte_length())
     else:
         return to_target_progressive(i)
+
+
+L = TypeVar('L', bound="ProgressiveList")
 
 
 class ProgressiveList(MonoSubtreeView):
@@ -213,6 +216,11 @@ class ProgressiveList(MonoSubtreeView):
         super().set(i, v)
 
     def __repr__(self):
+        if issubclass(self.__class__.element_cls(), byte):
+            try:
+                return '0x' + self.encode_bytes().hex()
+            except NavigationError:
+                pass
         return self._repr_sequence()
 
     @classmethod
@@ -240,7 +248,17 @@ class ProgressiveList(MonoSubtreeView):
     def max_byte_length(cls) -> int:
         return 1 << 32  # Essentially unbounded, limited by offsets if nested
 
+    @classmethod
+    def from_obj(cls: Type[L], obj: ObjType) -> L:
+        if issubclass(cls.element_cls(), byte):
+            if not isinstance(obj, (list, tuple, str, bytes)):
+                raise ObjParseException(f"obj '{obj}' is not a list, tuple, str or bytes")
+            return cls(obj)
+        return super().from_obj(obj)
+
     def to_obj(self) -> ObjType:
+        if issubclass(self.__class__.element_cls(), byte):
+            return '0x' + self.encode_bytes().hex()
         return list(el.to_obj() for el in self.readonly_iter())
 
 
