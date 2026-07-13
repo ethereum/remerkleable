@@ -1190,6 +1190,19 @@ def test_container_invalid():
         _ = SmallTestStruct.decode_bytes(bytes.fromhex("a7e1d33b00"))
 
 
+def test_container_rejects_first_offset_past_fixed_section():
+    class Example(Container):
+        fixed: uint8
+        items: List[uint8, 4]
+
+    value = Example(fixed=9, items=[1, 2])
+    assert value.encode_bytes().hex() == "09050000000102"
+
+    malformed = bytes.fromhex("09060000000102")
+    with pytest.raises(Exception, match="first offset 6 is not equal to expected fixed size 5"):
+        Example.decode_bytes(malformed)
+
+
 @pytest.mark.parametrize("base_typs", [
     (Container, Container),
     (ProgressiveContainer(active_fields=[1, 1, 1]), ProgressiveContainer(active_fields=[1, 1, 1, 1])),
