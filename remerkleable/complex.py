@@ -945,9 +945,9 @@ class Container(_ContainerBase):
                     dyn_fields.append(FieldOffset(key=fkey, typ=ftyp, offset=int(decode_offset(stream))))
                     fixed_size += OFFSET_BYTE_LENGTH
             if len(dyn_fields) > 0:
-                if dyn_fields[0].offset < fixed_size:
+                if dyn_fields[0].offset != fixed_size:
                     raise Exception(f"first offset {dyn_fields[0].offset} is "
-                                    f"smaller than expected fixed size {fixed_size}")
+                                    f"not equal to expected fixed size {fixed_size}")
                 for i, (fkey, ftyp, foffset) in enumerate(dyn_fields):
                     next_offset = dyn_fields[i + 1].offset if i + 1 < len(dyn_fields) else scope
                     if foffset > next_offset:
